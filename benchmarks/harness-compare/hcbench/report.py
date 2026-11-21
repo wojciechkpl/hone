@@ -574,7 +574,7 @@ def check_conformance(
     if prereg is None:
         return out
     out["mismatches"] += _status_mismatches(runs, prereg)
-    if prereg.get("stage") == "a":
+    if prereg.get("stage") == "a" and prereg.get("rules_check") is not None:  # K148
         out["mismatches"] += _stage_a_mismatches(runs, prereg)
     if bundles is not None and prereg.get("bundle"):
         out["mismatches"] += _bundle_mismatches(prereg["bundle"], bundles)
@@ -771,7 +771,7 @@ def suite_table(
     head = (
         "| arm | pass@1 | 95% CI | tasks | runs | repeat SD | median tokens | median wall s "
         "| median tool calls | median read:edit | doom-loop runs | ctx-full runs "
-        "| budget-exceeded | timeouts |" + (" tokens per resolved task |" if per_resolved else "")
+        "| budget-exceeded | timeouts |" + (" tokens per resolved run |" if per_resolved else "")
         + "\n" + "|---" * (15 if per_resolved else 14) + "|\n"
     )  # fmt: skip
     out, stats = head, {}
@@ -797,20 +797,33 @@ def suite_table(
 
 
 def _tokens_per_resolved(mine: list[dict]) -> str:
-    """K112: all the arm's tokens divided by its resolved runs."""
+    """K112, K146: all judged runs' tokens divided by the arm's resolved runs."""
     resolved = sum(1 for r in mine if r["resolved"])
     tokens = sum(r["total_tokens"] or 0 for r in mine)
     return f"{tokens / resolved:.0f}" if resolved else "–"
 
 
-def pairwise_table(rows: list[dict], suite: str, n_run: int | None = None) -> str:
-    """With ``n_run`` (the tasks run; stage a, K111, K141) the table adds the tasks used and left
-    out per contrast and a claim line per Holm contrast."""
+STAGE_A_FAMILY = (("hone-inject", "pi"), ("hone-inject", "hermes"))
+STAGE_A_OUTSIDE = (("hone-inject", "hone-noinject"), ("pi", "hermes"))
+OUTSIDE = "outside the family"
+FAMILY_NOTE = "Holm family"
+
+
+def pairwise_table(rows: list[dict], suite: str, n_run: int | None = None, pending: int = 0) -> str:
+    """With ``n_run`` (the tasks run; stage a, K111, K141, K144, K146) the table holds exactly
+    the K101 contrasts: the Holm family, then the two outside it (no Holm decision). It adds
+    ``p (paired bootstrap)``, tasks used and left out, and a claim line per family contrast,
+    unless ``pending`` re-grades make the report not final (K147)."""
     rows = [r for r in rows if r["suite"] == suite and r["resolved"] is not None]
     arms = {r["arm"] for r in rows}
     lines = []
     rep0 = _repeat_zero(rows)  # selected on `repeat`; the smallest seed only without one
-    present = [(a, b) for a, b in PAIRS if a in arms and b in arms]
+    if n_run is None:
+        present = [(a, b) for a, b in PAIRS if a in arms and b in arms]
+    else:
+        present = [
+            (a, b) for a, b in (*STAGE_A_FAMILY, *STAGE_A_OUTSIDE) if a in arms and b in arms
+        ]
     claim: dict[str, bool] = {}
     notes = []
     if suite == "a":
@@ -829,29 +842,38 @@ def pairwise_table(rows: list[dict], suite: str, n_run: int | None = None) -> st
         b01, b10 = discordant(ra, rb)
         label = f"{a} − {b}"
         holm_cell = ("yes" if claim[label] else "no") if label in claim else "-"
-        extra = ""
-        if n_run is not None:
-            extra = f" {pb['n_tasks']} | {n_run - pb['n_tasks']} |"
-            if label in claim:
-                notes.append(_claim_line(label, claim[label], pb, n_run))
+        excl = "yes" if pb["lo"] > 0 or pb["hi"] < 0 else "no"
+        if n_run is None:
+            lines.append(
+                f"| {label} | {pb['diff']:+.3f} | [{pb['lo']:+.3f}, {pb['hi']:+.3f}] "
+                f"| {pb['n_tasks']} | {b01}/{b10} | {mcnemar_exact(b01, b10):.3f} "
+                f"| {excl} | {holm_cell} |"
+            )
+            continue
+        note = FAMILY_NOTE if label in claim else OUTSIDE
+        if label in claim and not pending:
+            notes.append(_claim_line(label, claim[label], pb, n_run))
         lines.append(
-            f"| {a} − {b} | {pb['diff']:+.3f} | [{pb['lo']:+.3f}, {pb['hi']:+.3f}] "
-            f"| {pb['n_tasks']} | {b01}/{b10} | {mcnemar_exact(b01, b10):.3f} "
-            f"| {'yes' if pb['lo'] > 0 or pb['hi'] < 0 else 'no'} "
-            f"| {holm_cell} |{extra}"
+            f"| {label} | {pb['diff']:+.3f} | [{pb['lo']:+.3f}, {pb['hi']:+.3f}] "
+            f"| {bootstrap_pvalue(ta, tb):.4f} | {b01}/{b10} | {mcnemar_exact(b01, b10):.3f} "
+            f"| {excl} | {holm_cell} | {pb['n_tasks']} | {n_run - pb['n_tasks']} | {note} |"
         )
     if not lines:
         return "_No comparable arm pairs._\n"
-    more = " tasks used | tasks left out |" if n_run is not None else ""
-    return (
-        "| comparison | Δ pass@1 | 95% CI (paired bootstrap) | tasks | discordant (a/b, repeat 0) "
-        f"| McNemar p | CI excludes 0 | Holm |{more}\n"
-        + "|---" * (10 if n_run is not None else 8)
-        + "|\n"
-        + "\n".join(lines)
-        + "\n"
-        + ("\n" + "\n".join(notes) + "\n" if notes else "")
-    )
+    if n_run is None:
+        head = (
+            "| comparison | Δ pass@1 | 95% CI (paired bootstrap) | tasks "
+            "| discordant (a/b, repeat 0) | McNemar p | CI excludes 0 | Holm |\n"
+            + "|---" * 8
+            + "|\n"
+        )
+    else:
+        head = (
+            "| comparison | Δ pass@1 | 95% CI (paired bootstrap) | p (paired bootstrap) "
+            "| discordant (a/b, repeat 0) | McNemar p | CI excludes 0 | Holm | tasks used "
+            "| tasks left out | family |\n" + "|---" * 11 + "|\n"
+        )
+    return head + "\n".join(lines) + "\n" + ("\n" + "\n".join(notes) + "\n" if notes else "")
 
 
 def _claim_line(label: str, claimed: bool, pb: Mapping, n_run: int) -> str:
@@ -864,6 +886,16 @@ def _claim_line(label: str, claimed: bool, pb: Mapping, n_run: int) -> str:
     )
 
 
+def holm_adjusted(pvalues: Mapping[str, float]) -> dict[str, float]:
+    """Holm step-down adjusted p-values: the running maximum of min(1, (m - rank) * p)."""
+    m = len(pvalues)
+    out, running = {}, 0.0
+    for rank, (k, p) in enumerate(sorted(pvalues.items(), key=lambda kv: (kv[1], kv[0]))):
+        running = max(running, min(1.0, (m - rank) * p))
+        out[k] = running
+    return out
+
+
 def _task_metric_means(rows: list[dict], arm: str, metric: str) -> dict[str, float]:
     acc: dict[str, list[float]] = defaultdict(list)
     for r in rows:
@@ -872,41 +904,52 @@ def _task_metric_means(rows: list[dict], arm: str, metric: str) -> dict[str, flo
     return {t: sum(v) / len(v) for t, v in acc.items()}
 
 
-def h2_table(rows: list[dict], n_run: int) -> str:
-    """K112, K141: tokens and wall seconds per task, hone-inject against pi and hermes, Holm over
-    the four tests. Only judged runs count; a task with no judged run for an arm is left out of
-    its contrasts."""
+def h2_table(rows: list[dict], n_run: int, pending: int = 0) -> str:
+    """K112, K141, K144, K146: tokens and wall seconds per task. The family
+    (hone-inject against pi and hermes) gets Holm over its four tests and the step-down adjusted
+    p; the two outside contrasts are descriptive. Only judged runs count (an instrumentation
+    error is judged: unresolved, with its tokens); a task with no judged run for an arm is left
+    out of its contrasts."""
     judged = [r for r in rows if r["suite"] == "a" and r["resolved"] is not None]
     arms = {r["arm"] for r in judged}
     tests = []
-    for a, b in H2_CONTRASTS:
-        if a in arms and b in arms:
-            for key, name in H2_METRICS:
-                ta, tb = _task_metric_means(judged, a, key), _task_metric_means(judged, b, key)
-                if set(ta) & set(tb):
-                    tests.append((f"{a} {MINUS} {b}", name, ta, tb))
+    for group, contrasts in ((True, STAGE_A_FAMILY), (False, STAGE_A_OUTSIDE)):
+        for a, b in contrasts:
+            if a in arms and b in arms:
+                for key, name in H2_METRICS:
+                    ta, tb = _task_metric_means(judged, a, key), _task_metric_means(judged, b, key)
+                    if set(ta) & set(tb):
+                        tests.append((group, f"{a} {MINUS} {b}", name, ta, tb))
     if not tests:
         return "_No comparable arm pairs._\n"
-    ps = {f"{c}|{m}": bootstrap_pvalue(ta, tb) for c, m, ta, tb in tests}
-    claim = holm(ps)
+    ps = {f"{c}|{m}": bootstrap_pvalue(ta, tb) for g, c, m, ta, tb in tests if g}
+    adjusted = holm_adjusted(ps)
     lines, notes = [], []
-    for c, m, ta, tb in tests:
+    for family, c, m, ta, tb in tests:
         pb = paired_bootstrap(ta, tb)
         key = f"{c}|{m}"
-        yes = "yes" if claim[key] else "no"
+        p = bootstrap_pvalue(ta, tb)
+        if family:
+            claimed = adjusted[key] <= 0.05
+            adj, yes, note = f"{adjusted[key]:.4f}", "yes" if claimed else "no", FAMILY_NOTE
+            if not pending:
+                notes.append(
+                    f"- {c}, {m}: difference claimed (Holm-adjusted p <= 0.05)."
+                    if claimed
+                    else f"- {c}, {m}: no detectable difference at n={n_run} "
+                    f"(95% CI [{pb['lo']:+.1f}, {pb['hi']:+.1f}])."
+                )
+        else:
+            adj, yes, note = "-", "-", OUTSIDE
         lines.append(
             f"| {c} | {m} | {pb['diff']:+.1f} | [{pb['lo']:+.1f}, {pb['hi']:+.1f}] "
-            f"| {ps[key]:.4f} | {yes} | {yes} | {pb['n_tasks']} | {n_run - pb['n_tasks']} |"
+            f"| {p:.4f} | {adj} | {yes} | {pb['n_tasks']} | {n_run - pb['n_tasks']} | {note} |"
         )
-        if not claim[key]:
-            notes.append(
-                f"- {c}, {m}: no detectable difference at n={n_run} "
-                f"(95% CI [{pb['lo']:+.1f}, {pb['hi']:+.1f}])."
-            )
     return (
         "| comparison | metric | mean paired difference per task | 95% CI (paired bootstrap) "
-        "| p | Holm | claimed | tasks used | tasks left out |\n" + "|---" * 9 + "|\n"
-        + "\n".join(lines) + "\n" + ("\n" + "\n".join(notes) + "\n" if notes else "")
+        "| p | p (Holm-adjusted) | claimed | tasks used | tasks left out | family |\n"
+        + "|---" * 10 + "|\n" + "\n".join(lines) + "\n"
+        + ("\n" + "\n".join(notes) + "\n" if notes else "")
     )  # fmt: skip
 
 
@@ -984,22 +1027,26 @@ def _stage_a_markdown(rows: list[dict], runs: list[dict], title: str, prereg: Ma
             f"Tasks created {dates[0]} to {dates[-1]}. Qwen3.8 was released in August 2026, so "
             "the model may have seen these tasks or their fixes.\n\n"
         )
+    pending = sum(1 for r in runs if r["suite"] == "a" and r.get("grade_status") in PENDING_GRADES)
+    final = f" — not final: {pending} runs pending re-grade" if pending else ""
     table, _ = suite_table(rows, "a", per_resolved=True)
-    out += f"{table}\n### H1 — pass@1 (pre-registered)\n\n"
-    out += pairwise_table(rows, "a", n_run) + "\n"
-    out += "### H2 — tokens and wall seconds per task (pre-registered)\n\n"
-    out += h2_table(rows, n_run) + "\n"
+    out += f"{table}\n_Tokens per resolved run: all judged runs' tokens ÷ resolved runs._\n\n"
+    out += f"### H1 — pass@1 (pre-registered){final}\n\n"
+    out += pairwise_table(rows, "a", n_run, pending) + "\n"
+    out += f"### H2 — tokens and wall seconds per task (pre-registered){final}\n\n"
+    out += h2_table(rows, n_run, pending) + "\n"
     notes = {
         "grader_infra_final": "unjudged, no longer re-graded, left out of pass@1",
         "ambiguous_repeated": "counted as unresolved",
+        "instrumentation_error": "counted as unresolved, not graded; tokens and wall kept",
     }
     listed = [
-        f"- {r['run_id']}: {r['grade_status']} ({notes[r['grade_status']]})"
-        for r in runs
+        f"- {r['arm']}: {r['run_id']}: {r['grade_status']} ({notes[r['grade_status']]})"
+        for r in sorted(runs, key=lambda r: (r.get("arm") or "", r["run_id"]))
         if r["suite"] == "a" and r.get("grade_status") in notes
     ]
     if listed:
-        out += "### Unjudged and repeated-ambiguous runs\n\n" + "\n".join(listed) + "\n"
+        out += "### Unjudged, repeated-ambiguous and broken runs\n\n" + "\n".join(listed) + "\n"
     return out
 
 
@@ -1057,7 +1104,11 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
     if prereg and (prereg / "preregistration.toml").exists():
         prereg_data = tomllib.loads((prereg / "preregistration.toml").read_text())
     stage_cb = bool(prereg_data and prereg_data.get("stage") == "cb")
-    stage_a = bool(prereg_data and prereg_data.get("stage") == "a")
+    stage_a = bool(
+        prereg_data
+        and prereg_data.get("stage") == "a"
+        and prereg_data.get("rules_check") is not None
+    )
     titles = (
         (
             "a",

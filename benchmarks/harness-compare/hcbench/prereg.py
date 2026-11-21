@@ -118,7 +118,10 @@ ANALYSIS_PLAN_A = {
     "instance with at least two attempts after its last grader_infra, all ambiguous, is final as "
     "ambiguous_repeated and counts as unresolved. An instance whose last three attempts in a row "
     "are grader_infra is grader_infra_final: it is no longer re-graded, it is left out of pass@1, "
-    "and the report lists it as unjudged, per arm. A task with no judged run for an arm (for "
+    "and the report lists it as unjudged, per arm. A run with an instrumentation_error (the "
+    "harness started, then the run failed) counts as unresolved in pass@1, is not graded, keeps "
+    "its tokens and wall seconds, and is listed per arm; a failure can't drop out of an arm's "
+    "pass@1. A task with no judged run for an arm (for "
     "example a grader_infra_final run left out of pass@1) is left out of every paired contrast "
     "with that arm, because the contrasts pair the tasks both arms ran; the report gives that "
     "count per contrast. Nothing else is excluded.",

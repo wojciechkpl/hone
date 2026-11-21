@@ -633,28 +633,35 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     non-stage-`a` `preregistration.toml` with its own message.
   - *Gaps (K133).* The preflight and the final check compare the `HC_A_*` rule values unstripped.
 
-- **Round 16 (K110-K113, K141-K143).**
-  - *Report (K110-K112, K141).* With a stage-`a` pre-registration, `hcbench.report` heads suite A
-    "Suite A — SWE-rebench (SWE-rebench grading fork), possibly contaminated", with one line
-    "Tasks created <earliest> to <latest>. Qwen3.8 was released in August 2026, ..." from
-    `[task_created_at]`. The pairwise table becomes "H1 (pre-registered)", with `tasks used` and
-    `tasks left out` per contrast and a claim line per Holm contrast ("no detectable difference
-    at n=<tasks run>" when not claimed). "H2 (pre-registered)" has one row per contrast
-    (`hone-inject − pi`, `hone-inject − hermes`) and metric (total tokens, wall seconds): the mean
-    paired difference per task, the 95% paired bootstrap CI, p, Holm over the four tests,
-    claimed, tasks used and tasks left out. A task with no judged run for an arm is left out of
-    its contrasts. The suite A table adds `tokens per resolved task` (all the arm's tokens over
-    its resolved runs). `grader_infra_final` and `ambiguous_repeated` runs are listed. Without a
-    stage-`a` pre-registration the heading is plain "Suite A"; a stage-`cb` report is otherwise
-    unchanged.
+- **Round 16 and 16b (K110-K113, K141-K149).**
+  - *When (K148).* The stage-`a` report applies only when the pre-registration has `stage = "a"`
+    and a `[rules_check]` table. An older SWE-bench Lite stage-`a` file gets the plain report
+    ("Suite A", "### Pairwise", no stage-`a` conformance checks).
+  - *Report (K110-K112, K141).* `hcbench.report` heads suite A "Suite A — SWE-rebench
+    (SWE-rebench grading fork), possibly contaminated", with the creation dates from
+    `[task_created_at]`. "H1 (pre-registered)" and "H2 (pre-registered)" hold exactly the K101
+    contrasts. The family is `hone-inject − pi` and `hone-inject − hermes`, with Holm over these
+    (H1) or over their four tests (H2). Then come `hone-inject − hone-noinject` and
+    `pi − hermes`, marked "outside the family", with no Holm decision (K144). No other pair
+    appears. H1 columns: `p (paired bootstrap)`, `Holm`, `tasks used`, `tasks left out`
+    (no `tasks`); H2 columns: `p` and `p (Holm-adjusted)` (the step-down adjusted p), `claimed`,
+    `tasks used`, `tasks left out` (K146). A task with no judged run for an arm is left out of
+    its contrasts. The suite A table adds `tokens per resolved run` ("all judged runs' tokens ÷
+    resolved runs"). Claim lines say "no detectable difference at n=<tasks run>".
+  - *Broken runs (K145).* A suite A run with an `instrumentation_error` gets status
+    `instrumentation_error`, resolved 0, in `grading/outcomes.csv` (`grade.collect_instrumented`)
+    and is not graded. It counts as unresolved in H1, keeps its tokens and wall seconds in H2,
+    is listed per arm, and is not a conformance mismatch. `ANALYSIS_PLAN_A` states the rule.
+  - *Not final (K147).* While runs are pending a re-grade, the H1 and H2 headings say "not
+    final: N runs pending re-grade" and no claim lines are written. `grader_infra_final` runs
+    don't make the report not final; they and `ambiguous_repeated` runs are listed.
   - *Conformance (K113, K142).* Stage-`a` mismatches are dicts `{run_id, field, expected,
-    found}`: `task_digest` (the campaign's suite A tasks against `run_digest`, else `digest`),
-    `image` (a run's image against `[task_images]`), `repeats.<arm>` (against `HC_A_REPEATS`) and
-    `grade_status` (a run that is `ungraded`, `stale`, `grader_infra`, `ambiguous` or `missing`).
-    Only `grader_infra_final` runs, listed as unjudged, may be absent from the analysis.
+    found}`: `task_digest` (the campaign's suite A tasks against `run_digest`, else `digest`; the
+    header's digest line uses the same), `image`, `repeats.<arm>` and `grade_status` (`ungraded`,
+    `stale`, `grader_infra`, `ambiguous`, `missing`).
   - *Apply failure (K143).* In fork mode `apply_failed` needs a `run_instance.log` line that
-    begins with the K138 prefix followed by ` - INFO - >>>>> Patch Apply Failed`; the marker in
-    the agent's diff or in another log doesn't count. The Lite path is unchanged.
+    begins with the K138 prefix followed by ` - INFO - >>>>> Patch Apply Failed`. The Lite path
+    is unchanged.
 
 ### Campaign 1, round 2 (K18-K29)
 

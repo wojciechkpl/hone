@@ -14,6 +14,7 @@ Status → resolved:
   apply_failed | error (tests errored/timed out, patch-caused)   0
   grader_infra | ambiguous | missing        blank → re-grade (exit 1)
   ambiguous_repeated (fork mode: 2+ ambiguous attempts after the last grader_infra)   0
+  instrumentation_error (the run broke its own measurement; not graded)   0
   grader_infra_final (fork mode: 3 grader_infra attempts in a row)        blank, never re-graded
 """
 
@@ -96,6 +97,16 @@ def collect(campaign: Path) -> dict[tuple[str, int], list[dict]]:
             }
         )
     return groups
+
+
+def collect_instrumented(campaign: Path) -> list[str]:
+    """K145: run ids of suite A runs that failed after the harness started (no patch to grade)."""
+    out = []
+    for run_json in sorted((campaign / "a").glob("*/s*/*/run.json")):
+        run = json.loads(run_json.read_text())
+        if run.get("instrumentation_error") and not run.get("infra_error"):
+            out.append(run["run_id"])
+    return out
 
 
 def read_report(report_dir: Path) -> dict | None:
@@ -359,6 +370,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(f"[grade] {name}: " + ", ".join(f"{k}={v}" for k, v in sorted(tally.items())))
 
+    for run_id in collect_instrumented(args.campaign):  # K145: unresolved, never graded
+        rows.append(
+            {"run_id": run_id, "patch_sha256": "", "resolved": 0, "status": "instrumentation_error"}
+        )
     with (gdir / "outcomes.csv").open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["run_id", "patch_sha256", "resolved", "status"])
         w.writeheader()

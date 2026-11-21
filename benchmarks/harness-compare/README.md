@@ -234,12 +234,17 @@ apply failure stays an apply failure, and an error with no block stays `error`.
 Suite A results are reported as possibly contaminated (see **Suite A rules** above).
 **Report.** `make report CAMPAIGN=c1-a` (with `HC_PREREG` pointing at `prereg/c1-a`) writes
 the suite A section under the heading "possibly contaminated", with the creation dates of the
-tasks, the pre-registered H1 table (pass@1 per contrast) and H2 table (tokens and wall seconds
-per task, Holm across the four tests). Each contrast shows the tasks used and the tasks left
-out, because one arm has no judged run for them. The report lists the `grader_infra_final` runs
-as unjudged and the `ambiguous_repeated` runs. It exits with the conformance code if a run
-is still waiting for a re-grade, or if the tasks, images or repeats differ from the stage-`a`
-file.
+tasks. H1 (pass@1) and H2 (tokens and wall seconds per task) are pre-registered and hold the
+contrasts of the analysis plan: `hone-inject` against `pi` and `hermes` (Holm over these), then
+`hone-inject − hone-noinject` and `pi − hermes`, marked "outside the family". H2 gives the
+Holm-adjusted p. Each contrast shows the tasks used and the tasks left out, because one arm has
+no judged run for them.
+
+The report lists the `grader_infra_final` runs as unjudged, the `ambiguous_repeated` runs, and
+the runs with an `instrumentation_error` per arm (they count as unresolved and are not graded).
+It exits with the conformance code if a run is still waiting for a re-grade, or if the tasks,
+images or repeats differ from the stage-`a` file. While re-grades are pending, the H1 and H2
+headings say "not final" and no claim lines are written.
 
 ## Day-to-day
 
