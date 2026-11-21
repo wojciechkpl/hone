@@ -73,14 +73,14 @@ def five_arm_campaign(tmp_path, **kw):
 
 
 def test_k144_h1_should_hold_exactly_the_four_contrasts_of_k101(tmp_path):
-    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path))
+    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path, arms_main=ALL_ARMS))
     rows = h1_rows(text)
     assert [r["comparison"] for r in rows] == [*FAMILY, *OUTSIDE]
     assert [is_outside(r) for r in rows] == [False, False, True, True]
 
 
 def test_k144_no_other_pair_should_appear_in_h1_or_h2(tmp_path):
-    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path))
+    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path, arms_main=ALL_ARMS))
     for marker in ("H1", "H2"):
         body = "\n".join(subsection(text, marker))
         assert "hone-callgraph" not in body
@@ -88,7 +88,7 @@ def test_k144_no_other_pair_should_appear_in_h1_or_h2(tmp_path):
 
 
 def test_k144_outside_rows_should_carry_no_holm_decision_in_h1(tmp_path):
-    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path))
+    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path, arms_main=ALL_ARMS))
     for row in h1_rows(text):
         if is_outside(row):
             assert row["Holm"] == "-"
@@ -97,7 +97,7 @@ def test_k144_outside_rows_should_carry_no_holm_decision_in_h1(tmp_path):
 
 
 def test_k144_h2_should_have_the_outside_contrasts_as_descriptive_rows(tmp_path):
-    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path))
+    text, _ = build(five_arm_campaign(tmp_path), prereg_a(tmp_path, arms_main=ALL_ARMS))
     rows = table(subsection(text, "H2"))
     keys = {(r["comparison"], r["metric"]) for r in rows}
     assert keys == {(c, m) for c in (*FAMILY, *OUTSIDE) for m in ("total tokens", "wall seconds")}
@@ -121,7 +121,7 @@ def test_k144_h1_holm_should_run_over_the_two_family_contrasts_only(tmp_path):
         return k >= 7  # pi, hermes, hone-callgraph
 
     camp = five_arm_campaign(tmp_path, repeats=(0,), resolved=resolved)
-    text, _ = build(camp, prereg_a(tmp_path, repeats="0"))
+    text, _ = build(camp, prereg_a(tmp_path, repeats="0", arms_main=ALL_ARMS))
     rows = {r["comparison"]: r for r in h1_rows(text)}
     for label in FAMILY:
         assert num(rows[label]["p (paired bootstrap)"]) == pytest.approx(0.0178, abs=0.0006)
@@ -179,7 +179,7 @@ def test_k144_h2_holm_should_run_over_the_family_only_and_match_an_independent_h
         tokens=lambda a, t, r: tok[a][t],
         wall=lambda a, t, r: wal[a][t],
     )
-    text, _ = build(camp, prereg_a(tmp_path))
+    text, _ = build(camp, prereg_a(tmp_path, arms_main=ALL_ARMS[:4]))
     rows = {(r["comparison"], r["metric"]): r for r in table(subsection(text, "H2"))}
     order = [
         (FAMILY[0], "total tokens", hone_t, pi_t),

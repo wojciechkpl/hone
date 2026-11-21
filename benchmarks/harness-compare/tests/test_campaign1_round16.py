@@ -122,6 +122,7 @@ def prereg_a(
     run_digest="same",
     repeats="0,1",
     rules_check=True,
+    arms_main=ARMS,
     **over,
 ):
     """A stage-a prereg directory: preregistration.toml and selection.json."""
@@ -142,7 +143,9 @@ def prereg_a(
         "config": {
             "HC_SERVED_NAME": "qwen3.8-27b",
             "HC_A_REPEATS": repeats,
-            "HC_ARMS_MAIN": ",".join(ARMS),  # K152: the arms every task is expected to have run
+            "HC_ARMS_MAIN": ",".join(
+                arms_main
+            ),  # K152: the arms every task is expected to have run
         },
         "bundle": {"x": 1},
         "tasks": tasks_table,
