@@ -1653,6 +1653,22 @@ The review of round 14 found the frozen selection rules implemented exactly, and
   - An id that appears only in `incomplete_ids`, or in no list, is `missing` and gets
     re-graded.
 
+- **From the review of round 14b (K124–K128).** None of these blocks the pre-registration,
+  but each is cheap:
+  - **K124 A malformed bundle manifest** (unreadable, or not JSON) stops with a message that
+    names the file, not a traceback. This holds for both stages.
+  - **K125 A new selection starts clean.** `select` removes any `images.digests` and
+    `images.check.json` left in its directory, so the hashed check file never lists a task
+    that wasn't drawn.
+  - **K126 Every check that needs only the environment runs in the preflight.** That covers
+    K99 (`HC_A_GRADER_REF`, `HC_A_NAMESPACE`), the placeholder refusal, and the Hermes and
+    Pi bundle checks, each with the same draft rules as the final step.
+  - **K127 Consistent inputs.**
+    - The script stops on `--accept-diff=` with an empty value, as it does on a missing one.
+    - The preflight and the final check compare the same stripped values.
+  - **K128 README.** The stage-`a` paragraph mentions the K116 refusal, and no line is
+    longer than the file's other lines.
+
 #### Round 16: the stage-`a` report (K110–K113)
 
 - **K110 Label.** With a stage-`a` pre-registration, the suite A heading is
