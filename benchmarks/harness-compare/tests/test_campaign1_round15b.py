@@ -17,7 +17,9 @@ Contract choices made here (the spec leaves them open):
 
 import csv
 import importlib.metadata
+import io
 import json
+import logging
 import subprocess
 
 import pytest
@@ -76,19 +78,49 @@ def run_fork(tmp_path, monkeypatch, steps, ids=("a__a-1",), *extra, fork=True, c
     return rc, camp, ev
 
 
+def fork_log(*messages):
+    """Text as the fork's setup_logger writes it: every message goes through a real
+    logging.Logger with `%(asctime)s - %(levelname)s - %(message)s` (docker_build.py:59).
+    `messages` are (level, text) pairs; a multi-line text keeps its later lines unprefixed."""
+    stream = io.StringIO()
+    logger = logging.getLogger(f"fork-fixture.{id(stream)}")
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    try:
+        for level, text in messages:
+            getattr(logger, level)(text)
+    finally:
+        logger.removeHandler(handler)
+    return stream.getvalue()
+
+
 def run_log(iid, error=None, patch="diff --git a/f.py b/f.py\n+pass\n"):
-    """A run_instance.log as the fork writes it: the patch under "Git diff before:" and
-    "Git diff after:", then, when the run failed, the harness's own error and traceback."""
-    text = (
-        f"Evaluating {iid}\nGit diff before:\n{patch}\nApplying patch...\n"
-        f"Git diff after:\n{patch}\n"
+    """A run_instance.log as eval.py writes it. A failed run logs the traceback at INFO and
+    then, at ERROR, `Error in evaluating model for <iid>: <error>` with the traceback and the
+    "Check (...) for more information." line, as the fork's `except Exception` does."""
+    ok = [
+        ("info", f"Container for {iid} started: 1a2b3c"),
+        ("info", f"Git diff before:\n{patch}"),
+        ("info", "Test runtime: 1.23 seconds"),
+        ("info", f"Test output for {iid} written to logs/run_evaluation/x/{iid}/test_output.txt"),
+        ("info", f"Git diff after:\n{patch}"),
+    ]
+    if error is None:
+        return fork_log(*ok)
+    trace = 'Traceback (most recent call last):\n  File "eval.py", line 1, in run_instance'
+    return fork_log(
+        *ok[:3],
+        ("info", trace),
+        (
+            "error",
+            f"Error in evaluating model for {iid}: {error}\n{trace}\n"
+            f"Check (logs/run_evaluation/x/{iid}/run_instance.log) for more information.",
+        ),
+        ("info", f"Container for {iid} stopped"),
     )
-    if error is not None:
-        text += (
-            f"Error in evaluating model for {iid}: {error}\n"
-            'Traceback (most recent call last):\n  File "eval.py", line 1, in run_instance\n'
-        )
-    return text
 
 
 def step(iid, error=None, *, bucket="error_ids", log=None, test_output=None, **more):
@@ -179,8 +211,8 @@ def test_k129_the_first_signature_should_win_so_the_environment_tier_beats_ambig
 
 
 def test_k129_apply_failure_should_keep_precedence_over_every_signature(tmp_path, monkeypatch):
-    log = (
-        run_log("a__a-1", INFRA) + ">>>>> Patch Apply Failed\nTimeout error: 5 seconds exceeded.\n"
+    log = fork_log(("info", ">>>>> Patch Apply Failed:\nerror: patch failed: f.py:1")) + run_log(
+        "a__a-1", INFRA + "\nTimeout error: 5 seconds exceeded."
     )
     rc, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
     assert outcomes(camp)["a__a-1"] == ("0", "apply_failed")

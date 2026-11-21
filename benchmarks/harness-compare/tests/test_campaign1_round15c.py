@@ -8,6 +8,7 @@ must read only ``error_ids``. Fake logs follow the fork's ``eval.py``.
 # ruff: noqa: F401
 
 import json
+import re
 
 import pytest
 from fakebin import calls
@@ -17,6 +18,7 @@ from test_campaign1_round15b import (
     INFRA,
     ForkEvaluate,
     attempt,
+    fork_log,
     outcomes,
     run_attempts,
     run_fork,
@@ -79,7 +81,7 @@ def test_k134_the_fork_timeout_should_use_the_error_block_not_test_output(tmp_pa
 
 
 def test_k134_an_error_with_no_error_block_should_stay_error(tmp_path, monkeypatch):
-    log = run_log("a__a-1", error=None) + "later line: Error creating container\n"
+    log = run_log("a__a-1", error=None) + fork_log(("info", "later: Error creating container"))
     _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
     assert outcomes(camp)["a__a-1"] == ("0", "error")  # a signature outside the block
 
@@ -87,8 +89,10 @@ def test_k134_an_error_with_no_error_block_should_stay_error(tmp_path, monkeypat
 def test_k134_only_the_last_error_line_should_start_the_block(tmp_path, monkeypatch):
     first_bad = (
         run_log("a__a-1", INFRA)  # an earlier error block with a signature
-        + "retrying\n"
-        + "Error in evaluating model for a__a-1: AssertionError: tests failed\n"
+        + fork_log(
+            ("info", "retrying"),
+            ("error", "Error in evaluating model for a__a-1: AssertionError: tests failed"),
+        )
     )
     _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=first_bad)])
     assert outcomes(camp)["a__a-1"] == ("0", "error")  # not the first line to the end
@@ -103,26 +107,100 @@ def test_k134_a_signature_in_the_last_block_should_count_even_after_a_clean_firs
 
 
 def test_k134_the_block_should_run_to_the_end_of_the_file(tmp_path, monkeypatch):
-    log = (
-        run_log("a__a-1", "RuntimeError: x")
-        + '  File "eval.py", line 9, in run_instance\n'
-        + "OSError: [Errno 12] Cannot allocate memory\n"
+    log = run_log("a__a-1", "RuntimeError: x") + fork_log(
+        (
+            "info",
+            '  File "eval.py", line 9, in run_instance\nOSError: [Errno 12] Cannot allocate memory',
+        )
     )
     _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
     assert outcomes(camp)["a__a-1"] == ("", "grader_infra")
 
 
 def test_k134_an_error_line_of_another_instance_should_not_start_the_block(tmp_path, monkeypatch):
-    log = run_log("a__a-1") + f"Error in evaluating model for other__x-9: {INFRA}\n"
+    log = run_log("a__a-1") + fork_log(
+        ("error", f"Error in evaluating model for other__x-9: {INFRA}")
+    )
     _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
     assert outcomes(camp)["a__a-1"] == ("0", "error")
 
 
-@pytest.mark.parametrize("prefix", ["  ", "INFO ", "x"])
-def test_k134_the_error_line_should_start_the_line(tmp_path, monkeypatch, prefix):
-    log = run_log("a__a-1") + f"{prefix}Error in evaluating model for a__a-1: {INFRA}\n"
+TS = "2026-11-20 23:27:23,136"
+ERR = f"Error in evaluating model for a__a-1: {INFRA}"
+
+
+STAMP = r"(?m)^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} - "
+
+
+def test_k138_the_fixture_should_write_the_fork_format():
+    text = run_log("a__a-1", INFRA)
+    assert re.search(STAMP + r"ERROR - Error in evaluating model for a__a-1:", text)
+    assert re.search(STAMP + r"INFO - Git diff before:", text)
+
+
+def test_k138_a_timestamped_error_line_should_start_the_block(tmp_path, monkeypatch):
+    log = run_log("a__a-1") + f"{TS} - ERROR - {ERR}\n"
+    _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
+    assert outcomes(camp)["a__a-1"] == ("", "grader_infra")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        ERR,  # the message alone
+        f"{TS} - INFO - {ERR}",  # another level
+        f"{TS} - WARNING - {ERR}",
+        f" {TS} - ERROR - {ERR}",  # space-prefixed
+        f"+{TS} - ERROR - {ERR}",  # a diff line imitating it
+        f"-{TS} - ERROR - {ERR}",
+        f"INFO {TS} - ERROR - {ERR}",
+        f"2026-11-20 23:27:23 - ERROR - {ERR}",  # no milliseconds
+        f"{TS} ERROR {ERR}",  # not the fork's separators
+    ],
+)
+def test_k138_only_the_fork_prefixed_error_line_should_start_the_block(tmp_path, monkeypatch, line):
+    log = run_log("a__a-1") + line + "\n"
     _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
     assert outcomes(camp)["a__a-1"] == ("0", "error")
+
+
+def test_k138_a_diff_line_that_imitates_the_error_line_should_not_start_the_block(
+    tmp_path, monkeypatch
+):
+    patch = f"diff --git a/f.py b/f.py\n+{TS} - ERROR - {ERR}\n {TS} - ERROR - {ERR}\n"
+    log = run_log("a__a-1", "AssertionError: tests failed", patch=patch)
+    _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
+    assert outcomes(camp)["a__a-1"] == ("0", "error")
+
+
+def test_k138_the_instance_id_should_be_escaped(tmp_path, monkeypatch):
+    iid = "o__r.s-1"
+    other = "o__rXs-1"  # matches an unescaped "."
+    log = run_log(iid) + fork_log(("error", f"Error in evaluating model for {other}: {INFRA}"))
+    _, camp, _ = run_fork(tmp_path, monkeypatch, [step(iid, log=log)], (iid,))
+    assert outcomes(camp)[iid] == ("0", "error")
+    log = run_log(iid, INFRA)
+    (tmp_path / "ok").mkdir()
+    _, camp, _ = run_fork(tmp_path / "ok", monkeypatch, [step(iid, log=log)], (iid,))
+    assert outcomes(camp)[iid] == ("", "grader_infra")
+
+
+def test_k138_a_pull_failure_should_be_grader_infra(tmp_path, monkeypatch):
+    error = (
+        "Error building image a__a-1: 404 Client Error: pull access denied for "
+        "swerebench/sweb.eval.x86_64.a_1776_a-1"
+    )
+    _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", error)])
+    assert outcomes(camp)["a__a-1"] == ("", "grader_infra")
+
+
+def test_k138_a_test_timeout_should_be_ambiguous(tmp_path, monkeypatch):
+    # eval.py: test_output.txt gets "Timeout error: N seconds exceeded." and the
+    # EvaluationError text is "<iid>: Test timed out after N seconds."
+    error = "a__a-1: Test timed out after 1800 seconds."
+    s = step("a__a-1", error, test_output="\n\nTimeout error: 1800 seconds exceeded.")
+    _, camp, _ = run_fork(tmp_path, monkeypatch, [s])
+    assert outcomes(camp)["a__a-1"] == ("", "ambiguous")
 
 
 def test_k134_apply_failure_should_still_take_precedence(tmp_path, monkeypatch):
@@ -200,6 +278,7 @@ def test_k136_a_missing_stage_a_file_should_stop_before_uv(tmp_path):
     assert not (d / "preregistration.toml").exists()
     assert r.returncode != 0
     assert "preregistration.toml" in r.stdout + r.stderr
+    assert "Traceback" not in r.stdout + r.stderr  # K140: its own message
     assert uv == []
 
 
@@ -208,6 +287,7 @@ def test_k136_a_file_that_is_not_stage_a_should_stop_before_uv(tmp_path, stage):
     r, uv, _ = grade_rig(tmp_path, toml=stage)
     assert r.returncode != 0
     assert "stage" in (r.stdout + r.stderr).lower()
+    assert "Traceback" not in r.stdout + r.stderr
     assert uv == []
 
 
