@@ -128,8 +128,16 @@ NUMERIC_KEYS = [
 INT_KEYS = ["HC_SEED_BASE", "HC_SELECTION_SEED", "HC_A_N"]
 
 SUITE_A_TEXT = {
-    "stratify": "Stratified by repository with the largest-remainder rule, and at least one task "
-    "per repository.",
+    "stratify": "Draw n repositories with "
+    'random.Random(f"{seed}:repos").sample(sorted(repos), n), '
+    "then one task from each with "
+    'random.Random(f"{seed}:{repo}").sample(sorted(ids), 1). '
+    "If fewer than n repositories are eligible, use the largest-remainder rule with at least one "
+    "task per repository.",
+    "contamination": "Every eligible task was created before Qwen3.8 was released in August 2026, "
+    "so the model may have seen these tasks or their fixes in training; suite A results are "
+    "reported as possibly contaminated, and every arm runs the same model, so the harness "
+    "contrasts compare harnesses under the same exposure.",
     "if_fewer": "If fewer than n tasks are eligible on pre-registration day, all eligible tasks "
     "are used.",
     "grader_pin": "The grading fork is pinned by commit at stage a, together with each task "
@@ -425,6 +433,10 @@ def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
         raise SystemExit(
             f"HC_A_MIN_CREATED is not a real date, got {env['HC_A_MIN_CREATED']!r}"
         ) from None
+    if not re.fullmatch(r"[0-9]{4}_(0[1-9]|1[0-2])", env["HC_A_MIN_SPLIT"]):
+        raise SystemExit(
+            f"HC_A_MIN_SPLIT must be YYYY_MM (month 01 to 12), got {env['HC_A_MIN_SPLIT']!r}"
+        )
     if not re.fullmatch(r"[1-9]\d*", env["HC_A_N"].strip()):
         raise SystemExit(f"HC_A_N must be a positive integer, got {env['HC_A_N']!r}")
     for key in INT_KEYS:
