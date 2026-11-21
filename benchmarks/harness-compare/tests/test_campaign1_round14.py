@@ -1110,9 +1110,10 @@ def argv_text(c):
     return " ".join(c)
 
 
-def find(log, *needles):
+def find(log, *needles, without=()):
+    """Index of the first uv call holding every needle and none of `without`."""
     for k, c in enumerate(calls(log)):
-        if c[0] == "uv" and all(n in c for n in needles):
+        if c[0] == "uv" and all(n in c for n in needles) and not any(w in c for w in without):
             return k
     return None
 
@@ -1133,7 +1134,7 @@ def test_k100_stage_a_script_should_run_select_pull_check_then_prereg_in_order(t
     assert r.returncode == 0, r.stderr
     i_sel = find(log, "hcbench.rebench", "select")
     i_chk = find(log, "hcbench.rebench", "check-images")
-    i_pre = find(log, "hcbench.prereg")
+    i_pre = find(log, "hcbench.prereg", without=("--preflight",))  # K117: not the preflight
     i_pull = pull_index(log)
     assert None not in (i_sel, i_chk, i_pre, i_pull)
     assert i_sel < i_pull < i_chk < i_pre
@@ -1146,7 +1147,7 @@ def test_k100_stage_a_script_should_run_select_pull_check_then_prereg_in_order(t
 def test_k100_stage_a_script_should_hand_the_selection_and_rules_to_prereg(tmp_path):
     rig, bindir, log, env, d = stage_a_rig(tmp_path)
     run_script(rig, "05_preregister.sh", A_ARGS, bindir, env)
-    c = calls(log)[find(log, "hcbench.prereg")]
+    c = calls(log)[find(log, "hcbench.prereg", without=("--preflight",))]
     assert c[c.index("--selection") + 1] == str(d / "selection.json")
     assert c[c.index("--rules") + 1] == "prereg/c1/preregistration.toml"
     assert c[c.index("--stage") + 1] == "a"
@@ -1207,7 +1208,7 @@ def test_k100_skip_pull_with_draft_should_skip_only_the_pulls(tmp_path):
     assert r.returncode == 0, r.stderr
     assert pull_index(log) is None
     assert find(log, "hcbench.rebench", "select") is not None
-    c = calls(log)[find(log, "hcbench.prereg")]
+    c = calls(log)[find(log, "hcbench.prereg", without=("--preflight",))]
     assert "--draft" in c
 
 
