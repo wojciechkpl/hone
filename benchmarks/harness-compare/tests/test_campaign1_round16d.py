@@ -120,6 +120,23 @@ def test_k158_a_pending_run_outside_the_set_should_not_make_the_report_not_final
         assert claim_lines(subsection(text, marker))
 
 
+def test_k158_the_run_list_should_name_expected_runs_only(tmp_path):
+    statuses = {
+        ("pi", "t5", 0): "grader_infra_final",  # expected: listed
+        ("hermes", "t6", 1): "instrumentation_error",  # expected: listed
+        ("pi", "t3", 2): "instrumentation_error",  # extra repeat: not analysed, not listed
+        ("hermes", "t4", 2): "grader_infra_final",  # extra repeat: not analysed, not listed
+    }
+    text, _ = build(graded(tmp_path, statuses, repeats=(0, 1, 2)), prereg_a(tmp_path))
+    listed = "\n".join(
+        ln
+        for ln in text.splitlines()
+        if "grader_infra_final (" in ln or "instrumentation_error (" in ln
+    )
+    assert "a.pi.s0.t5" in listed and "a.hermes.s1.t6" in listed
+    assert "a.pi.s2.t3" not in listed and "a.hermes.s2.t4" not in listed
+
+
 def test_k158_analysis_plan_should_state_the_rule():
     text = " ".join(str(prereg.ANALYSIS_PLAN_A["exclusions"]).split())
     assert (
@@ -259,11 +276,11 @@ SCENARIO = Scenario(
 )
 
 
-def redteam_exec(*, fail_docker_run=False):
+def redteam_exec(network, *, fail_docker_run=False):
     def ex(argv, *, input=None, timeout=None):
         if argv[:2] == ["docker", "inspect"]:
             return subprocess.CompletedProcess(
-                argv, 0, json.dumps({"hcbench": {"IPAddress": "10.0.0.2"}}), ""
+                argv, 0, json.dumps({network: {"IPAddress": "10.0.0.2"}}), ""
             )
         if argv[:2] == ["docker", "run"] and fail_docker_run:
             return subprocess.CompletedProcess(argv, 1, "", "no such image")
@@ -274,7 +291,7 @@ def redteam_exec(*, fail_docker_run=False):
     return ex
 
 
-def suite_c_run(tmp_path, monkeypatch, **kw):
+def suite_c_run(tmp_path, monkeypatch, *, fail_docker_run=False):
     env = {"HC_BUNDLE_DIR": str(tmp_path / "bundle"), "HC_ADMIN_TOKEN": "t"}
     from test_campaign1_seed import ROOT
 
@@ -288,13 +305,16 @@ def suite_c_run(tmp_path, monkeypatch, **kw):
     task = Task(
         suite="c", task_id="rt01", image="img", workdir="/work", prompt="p", scenario=SCENARIO
     )
-    return execute_run(task, arm, 0, cfg, tmp_path / "out", http=LostRecords(), **kw)
+    ex = redteam_exec(cfg.network, fail_docker_run=fail_docker_run)
+    res = execute_run(task, arm, 0, cfg, tmp_path / "out", ex=ex, http=LostRecords())
+    return res, tmp_path / "out" / "c" / "pi" / "s0" / "rt01"
 
 
 def test_k162_suite_c_lost_records_after_the_harness_started_should_stay_instrumentation_error(
     tmp_path, monkeypatch
 ):
-    res = suite_c_run(tmp_path, monkeypatch, ex=redteam_exec())
+    res, rdir = suite_c_run(tmp_path, monkeypatch)
+    assert (rdir / "stdout.txt").exists()  # the run got as far as the harness
     assert str(res["instrumentation_error"]).startswith("records:")
     assert res["infra_error"] is None
 
@@ -303,8 +323,10 @@ def test_k162_suite_c_lost_records_before_the_harness_started_should_be_an_infra
     tmp_path, monkeypatch
 ):
     # Regression guard (may already pass): the run never started, so it can be re-run.
-    res = suite_c_run(tmp_path, monkeypatch, ex=redteam_exec(fail_docker_run=True))
-    assert res["infra_error"] and res["instrumentation_error"] is None
+    res, rdir = suite_c_run(tmp_path, monkeypatch, fail_docker_run=True)
+    assert "docker run failed" in res["infra_error"]  # it failed at the start, not the IP lookup
+    assert res["instrumentation_error"] is None
+    assert not (rdir / "stdout.txt").exists()
 
 
 @pytest.mark.parametrize("suite", ["a", "b", "smoke"])
