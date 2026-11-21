@@ -7,9 +7,9 @@ Contract choices made here (the spec leaves them open):
   "### H1 ... (pre-registered)" (the pairwise table) and "### H2 ... (pre-registered)".
   H1 columns keep the old ones and add `tasks used` and `tasks left out`.
   H2 columns: `comparison`, `metric` (`total tokens` or `wall seconds`),
-  `mean paired difference per task`, `95% CI (paired bootstrap)`, `p`, `Holm`, `claimed`,
-  `tasks used`, `tasks left out`. The suite A table gets `tokens per resolved task` = all the
-  arm's tokens divided by its resolved tasks.
+  `mean paired difference per task`, `95% CI (paired bootstrap)`, `p`, `p (Holm-adjusted)`,
+  `claimed`, `tasks used`, `tasks left out`. The suite A table gets `tokens per resolved run`
+  = all the arm's tokens divided by its resolved tasks.
 * K113/K142: conformance mismatches are dicts with `run_id`, `field`, `expected`, `found`; the
   fields are `task_digest`, `image`, `repeats.<arm>` and `grade_status`.
 * K141: a task with no judged run for an arm is left out of every contrast with that arm.
@@ -80,17 +80,28 @@ def a_campaign(
                     "wall_s": wall(arm, task, rep),
                     "proxy": {"total_tokens": tokens(arm, task, rep)},
                 }
-                write_run(camp, run)
                 res = resolved(arm, task, rep)
                 st = (status(arm, task, rep) if status else None) or (
                     "resolved" if res else "unresolved" if res is False else "missing"
                 )
+                if st == "instrumentation_error":  # K145: as runner.py writes such a run
+                    run["instrumentation_error"] = "RuntimeError: the agent broke its checkout"
+                    run["patch_sha256"] = None
+                    run["patch_bytes"] = None
+                    res = False
+                write_run(camp, run)
                 if st == "ungraded":
                     continue
                 rows.append(
                     {
                         "run_id": run_id,
-                        "patch_sha256": "other" if st == "stale" else "p",
+                        "patch_sha256": (
+                            ""
+                            if st == "instrumentation_error"
+                            else "other"
+                            if st == "stale"
+                            else "p"
+                        ),
                         "resolved": "" if res is None else int(bool(res)),
                         "status": "resolved" if st == "stale" else st,
                     }
@@ -103,7 +114,16 @@ def a_campaign(
     return camp
 
 
-def prereg_a(tmp_path, *, tasks=TASKS, digest=None, run_digest="same", repeats="0,1", **over):
+def prereg_a(
+    tmp_path,
+    *,
+    tasks=TASKS,
+    digest=None,
+    run_digest="same",
+    repeats="0,1",
+    rules_check=True,
+    **over,
+):
     """A stage-a prereg directory: preregistration.toml and selection.json."""
     d = tmp_path / "prereg"
     d.mkdir(exist_ok=True)
@@ -129,6 +149,9 @@ def prereg_a(tmp_path, *, tasks=TASKS, digest=None, run_digest="same", repeats="
         "analysis": {},
         **over,
     }
+    if rules_check:  # K148: only a SWE-rebench stage-a file has [rules_check]
+        data["rules_check"] = {"path": "prereg/c1/preregistration.toml", "sha256": "0" * 64,
+                               "repo_head": "", "accepted": {}}  # fmt: skip
     (d / "preregistration.toml").write_text(prereg_mod.dump_toml(data))
     selection = {"digest": digest}
     if run_digest is not None:
@@ -258,15 +281,18 @@ def test_k112_h2_should_have_one_row_per_contrast_and_metric(tmp_path):
     text, _ = build(a_campaign(tmp_path), prereg_a(tmp_path))
     heading = subsection(text, "H2")[0]
     assert "pre-registered" in heading
+    # K144: the four family tests, plus the outside contrast whose arms are present (pi, hermes)
     assert set(h2_rows(text)) == {
         (f"hone-inject {MINUS} pi", "total tokens"),
         (f"hone-inject {MINUS} pi", "wall seconds"),
         (f"hone-inject {MINUS} hermes", "total tokens"),
         (f"hone-inject {MINUS} hermes", "wall seconds"),
+        (f"pi {MINUS} hermes", "total tokens"),
+        (f"pi {MINUS} hermes", "wall seconds"),
     }
     row = next(iter(h2_rows(text).values()))
-    for col in ("mean paired difference per task", "95% CI (paired bootstrap)", "p", "Holm",
-                "claimed", "tasks used", "tasks left out"):  # fmt: skip
+    for col in ("mean paired difference per task", "95% CI (paired bootstrap)", "p",
+                "p (Holm-adjusted)", "claimed", "tasks used", "tasks left out"):  # fmt: skip
         assert col in row
 
 
@@ -280,7 +306,8 @@ def test_k112_h2_should_report_the_paired_mean_ci_and_p_on_obvious_data(tmp_path
     assert num(pi_tok["mean paired difference per task"]) == pytest.approx(-500)
     assert nums(pi_tok["95% CI (paired bootstrap)"]) == pytest.approx([-500, -500])
     assert num(pi_tok["p"]) == pytest.approx(0.0)
-    assert pi_tok["Holm"] == "yes" and pi_tok["claimed"] == "yes"
+    assert num(pi_tok["p (Holm-adjusted)"]) == pytest.approx(0.0)
+    assert pi_tok["claimed"] == "yes"
     assert num(
         rows[(f"hone-inject {MINUS} hermes", "total tokens")]["mean paired difference per task"]
     ) == pytest.approx(-1000)
@@ -300,7 +327,7 @@ def test_k112_a_difference_that_does_not_reject_should_not_be_claimed(tmp_path):
     text, _ = build(camp, prereg_a(tmp_path))
     row = h2_rows(text)[(f"hone-inject {MINUS} pi", "total tokens")]
     assert num(row["mean paired difference per task"]) == pytest.approx(0)
-    assert row["claimed"] == "no" and row["Holm"] == "no"
+    assert row["claimed"] == "no" and num(row["p (Holm-adjusted)"]) > 0.05
     assert "no detectable difference at n=10" in "\n".join(subsection(text, "H2"))
 
 
@@ -323,10 +350,12 @@ def test_k112_holm_should_run_across_the_four_h2_tests(tmp_path):
     expected = bootstrap_pvalue(hone_t, other_t)
     assert 0.0125 < expected < 0.025
     rows = h2_rows(text)
-    assert len(rows) == 4
-    for row in rows.values():
+    family = [r for (c, _), r in rows.items() if c.startswith(f"hone-inject {MINUS} ")]
+    assert len(rows) == 6 and len(family) == 4
+    for row in family:
         assert num(row["p"]) == pytest.approx(expected, abs=0.0006)
-        assert row["claimed"] == "no" and row["Holm"] == "no"
+        assert num(row["p (Holm-adjusted)"]) == pytest.approx(0.076, abs=0.0025)  # 4 * 0.019
+        assert row["claimed"] == "no"
 
 
 def test_k112_the_suite_a_table_should_give_tokens_per_resolved_task(tmp_path):
@@ -343,8 +372,8 @@ def test_k112_the_suite_a_table_should_give_tokens_per_resolved_task(tmp_path):
     text, _ = build(camp, prereg_a(tmp_path, tasks=tasks, repeats="0"))
     suite_table = table(subsection_after(text, HEADING))
     by_arm = {r["arm"]: r for r in suite_table}
-    assert num(by_arm["pi"]["tokens per resolved task"]) == pytest.approx(5000)  # 10000 / 2
-    assert num(by_arm["hone-inject"]["tokens per resolved task"]) == pytest.approx(5000)
+    assert num(by_arm["pi"]["tokens per resolved run"]) == pytest.approx(5000)  # 10000 / 2
+    assert num(by_arm["hone-inject"]["tokens per resolved run"]) == pytest.approx(5000)
 
 
 def subsection_after(text, heading):
