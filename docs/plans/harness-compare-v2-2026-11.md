@@ -1769,6 +1769,38 @@ K134–K136 replace the parts of K129 and K130 they name.
   - an error instance whose signature text appears only in the Git diff section or in
     `test_output.txt` stays `error`.
 
+#### Round 15d: from the review of round 15c (K138–K140)
+
+The review of round 15c found that the K134 anchor never matches a log the fork writes.
+- The fork's `setup_logger` formats every line as
+  `%(asctime)s - %(levelname)s - %(message)s`, so the real line reads
+  `2026-11-20 23:27:23,136 - ERROR - Error in evaluating model for <iid>: …`.
+- The test fixtures wrote the line without that prefix, so every real grading failure
+  would still have stayed `error`.
+
+- **K138 Anchor on the fork's log prefix.**
+  - The error block starts after the last line that begins with
+    `\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} - ERROR - Error in evaluating model for <iid>:`
+    with `<iid>` escaped. The rest of K134 is unchanged.
+  - Neither a Git diff line (starting with `+`, `-` or a space) nor `git apply -v` output
+    can take that form.
+  - The test fixtures write `run_instance.log` through `logging.Formatter` with the fork's
+    exact format string. A test pins:
+    - a timestamped `ERROR` line starts the block;
+    - a line with the message alone, or prefixed by `INFO`, by spaces, or by `+` before
+      the timestamp, does not.
+- **K139 What "left out of pass@1" means for the contrasts.** `ANALYSIS_PLAN_A`'s
+  exclusions text adds:
+  - a task with no judged run for an arm is left out of every paired contrast with that
+    arm, because the contrasts pair tasks both arms ran;
+  - the report gives that count per contrast.
+
+  This is what `paired_bootstrap` already does, by keeping only the tasks both arms have.
+- **K140 Hard to miss.**
+  - `hcbench.grade` prints every `grader_infra_final` run to stderr, as `WARN` lines.
+  - In fork mode, `scripts/20_grade.sh` refuses a missing stage-`a` file with its own
+    message, not a Python traceback.
+
 #### Round 16: the stage-`a` report (K110–K113)
 
 - **K110 Label.** With a stage-`a` pre-registration, the suite A heading is
