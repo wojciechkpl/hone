@@ -1841,6 +1841,47 @@ The review of round 15c found that the K134 anchor never matches a log the fork 
       K138 prefix followed by `INFO - >>>>> Patch Apply Failed`.
     - The marker in the agent's diff, or in any other log, doesn't count.
 
+#### Round 16b: from the review of round 16 (K144–K149)
+
+The report code and `ANALYSIS_PLAN_A` freeze at the stage-`a` tag, so these land first.
+
+- **K144 The contrasts K101 lists, and no others.** Under a stage-`a` pre-registration:
+  - **H1** has four rows: the family, `hone-inject − pi` and `hone-inject − hermes` (Holm
+    over these two), then `hone-inject − hone-noinject` and `pi − hermes`. The last two are
+    marked "outside the family" and carry no Holm decision.
+  - **H2** has the same two outside contrasts as descriptive rows, for each metric, marked
+    the same way. Holm still runs over the four family tests only.
+  - No other pair appears: not `hone-noinject − pi`, and not `hone-callgraph − …`.
+- **K145 A run that breaks its own measurement.** A suite A run with an
+  `instrumentation_error` (the harness started, then the run failed, for example because
+  the agent broke its checkout and no patch could be captured):
+  - counts as unresolved in H1 (resolved = 0), with status `instrumentation_error` in
+    `grading/outcomes.csv`, and is not graded;
+  - keeps its measured total tokens and wall seconds in H2;
+  - is listed per arm in the report, and is not a K142 mismatch.
+
+  `ANALYSIS_PLAN_A`'s exclusions text states this rule. It can't favour an arm: a failure
+  can't drop out of that arm's pass@1.
+- **K146 Unambiguous columns.**
+  - H1 adds `p (paired bootstrap)`, the p-value Holm decides on. It drops its `tasks`
+    column, which equals `tasks used`.
+  - In H2, `Holm` becomes `p (Holm-adjusted)`, the step-down adjusted p-value. `claimed`
+    stays.
+  - The suite A table's column is `tokens per resolved run`, with the note "all judged
+    runs' tokens ÷ resolved runs".
+- **K147 Not final while re-grades are pending.**
+  - When a stage-`a` report has runs pending a re-grade (K142), the H1 and H2 headings say
+    "not final: N runs pending re-grade".
+  - No claim lines are written then.
+- **K148 Only the SWE-rebench stage `a`.** The stage-`a` report behaviour (K110–K113,
+  K141–K147) applies when the pre-registration has `stage = "a"` and a `[rules_check]`
+  table. An older SWE-bench Lite stage-`a` file gets the plain report.
+- **K149 Tests for the mutants that survived:**
+  - the claim line's n counts the tasks run, not the tasks used by one contrast;
+  - H2 uses the per-task mean over two differing repeats;
+  - the `tokens per resolved run` denominator;
+  - the header's digest line uses `run_digest`.
+
 **Not checked off the GPU box.** The image check, the runs and the fork's grading need
 Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
 the image check, then one task on one arm, then grades it, then a `make report` dry run.
