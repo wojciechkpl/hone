@@ -1963,6 +1963,8 @@ can't change after the stage-`a` tag, so they land now.
     the pre-registration are left out." ("1 run … is left out.");
   - the K153 counts cover expected runs only, so a run outside the set never makes the
     report not final;
+  - the list of unjudged, repeated-ambiguous and broken runs names expected runs only, since
+    it says how each run was counted;
   - `ANALYSIS_PLAN_A`'s exclusions text adds: "A run of an arm, task or repeat that this
     file does not list is not analysed and is reported as a mismatch."
 - **K159 One way to find a run's repeat.** The K153 counts, the K158 filter and the K152
