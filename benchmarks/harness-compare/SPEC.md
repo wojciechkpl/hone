@@ -530,13 +530,19 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
   `HC_A_MIN_CREATED`. `files_sha256` adds the four `docker/` files under their rig-relative paths
   as quoted TOML keys (`dump_toml` quotes any key that is not `[A-Za-z0-9_-]+`).
   `[suite_a_rules]` has `repeats` as a list of integers, `min_created`, and the sentences
-  `stratify`, `if_fewer`, `grader_pin` and `contamination`.
-- **Suite A window and selection (K83–K86).** `bench.env.example` sets `HC_A_MIN_SPLIT=2026_03`
+  `stratify`, `if_fewer`, `grader_pin`, `contamination` and `eligible`.
+- **Suite A window and selection (K83–K91).** `bench.env.example` sets `HC_A_MIN_SPLIT=2026_03`
   and `HC_A_MIN_CREATED=2026-03-01`: no public SWE-rebench task is from September 2026 or later,
-  so suite A takes the newest ones, which predate Qwen3.8. `contamination` says they may have
-  been seen in training and that suite A is reported as possibly contaminated. `stratify` states
-  the `select_suite_a` rule (§2) with both generator seeds. Stage `cb` refuses an
-  `HC_A_MIN_SPLIT` that isn't `YYYY_MM` with a month from 01 to 12, drafts included.
+  so suite A takes the newest ones, which predate Qwen3.8.
+  - `eligible`: splits named `YYYY_MM`, `min_split` or later as text (`test` is ignored); the
+    date of `created_at` `min_created` or later, and no date means not eligible; splits
+    published before stage `a` count, and stage `a` records the dataset revision.
+  - `contamination`: every task eligible on 2026-11-20 predates Qwen3.8, so suite A is reported
+    as possibly contaminated; stage `a` records each task's creation date.
+  - `stratify`: the `select_suite_a` rule (§2), with `seed` = `selection_seed` and the two
+    draws written as runnable calls; a test runs them against the code.
+  - Stage `cb` refuses an `HC_A_MIN_SPLIT` that isn't exactly `YYYY_MM` with a month from 01 to
+    12 (no whitespace), drafts included.
 - **Analysis text (K29).** The stage `cb` `[analysis]` states the metrics, the unjudged-run rule,
   the three families and their contrasts, the interval, the p-value, the claim rule, and the H3
   (0 of 75) and H4 (24 of 30) thresholds of §11.3.

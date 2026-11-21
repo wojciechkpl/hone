@@ -355,12 +355,17 @@ flowchart LR
   and invites repetition loops. With real sampling, the repeats measure real variance.
   The main plan's §5.9 argument for temperature 0 no longer applies.
 
-### 10.3 Suite A: SWE-rebench, decontaminated for this model
+### 10.3 Suite A: SWE-rebench
 
-> **Changed on 2026-11-20 (§11.15).** No public SWE-rebench task is from September 2026 or
-> later, so suite A takes the newest tasks (split `2026_03`, created from 2026-03-01) and
-> reports them as possibly contaminated. The selection rule below can't run on SWE-rebench;
-> K86 replaces it. The rest of this section still applies.
+> **Changed on 2026-11-20 (§11.15, §11.16).** No public SWE-rebench task is from September
+> 2026 or later, so suite A takes the newest tasks (split `2026_03` and later, created from
+> 2026-03-01) and reports them as possibly contaminated.
+> - The **Eligibility** and **Selection** bullets below are replaced by K83, K86, K88 and
+>   K90.
+> - **Source**, **Repeats**, **Outcome** and the retirement of **SWE-bench Lite** still
+>   apply.
+> - Like suite G (§10.4), suite A is no longer decontaminated. Campaign 1 leads with suites
+>   C and B (§11.3); H1 and H2 are reported with the contamination label.
 
 - **Source:** `nebius/SWE-rebench-leaderboard` on Hugging Face, using the monthly splits
   named `YYYY_MM`. Grading uses SWE-rebench's fork of the SWE-bench harness
@@ -401,7 +406,7 @@ flowchart LR
   seeded `20261109`, with 2 repeats.
 - **Contamination:** Terminal-Bench has been public since 2025, and Qwen reports a score
   on 2.1. G is therefore a **secondary** suite and is not decontaminated. The report
-  says so.
+  says so. Since §11.15, suite A isn't decontaminated either.
 
 ### 10.5 Compute
 
@@ -1276,6 +1281,72 @@ Requirements:
     - the contamination label;
     - the selection rule, with `select_suite_a` next to `allocate`.
   - The runbook (outside the repository) gets the new values.
+
+### 11.16 Requirements, round 13 (from the review of round 12, 2026-11-20)
+
+The review of round 12 found the code correct. The text recorded in `[suite_a_rules]` had
+gaps, though, and that text is frozen at the tag:
+
+- Nothing said which tasks are eligible. For example, in Python `"test" >= "2026_03"` is
+  true, so a loader comparing split names as text would take in the `test` split, which
+  holds all 860 tasks.
+- The contamination sentence would become false if a split with newer tasks appears before
+  stage `a`.
+- The selection sentence didn't tie `seed` to `selection_seed`, or name the fallback's
+  code.
+
+Requirements:
+
+- **K88 Eligibility is recorded.**
+  - `SUITE_A_TEXT` gains `eligible`. It says a task is eligible when:
+    - its split is named `YYYY_MM` (four digits, an underscore, a month from 01 to 12);
+    - the split name is `min_split` or later, compared as text;
+    - the date of its `created_at` is `min_created` or later.
+  - It also says:
+    - other splits, such as `test`, are ignored;
+    - a task with no creation date is not eligible;
+    - splits published before stage `a` is pre-registered count, and stage `a` records the
+      dataset revision.
+  - The comment above `HC_A_MIN_CREATED` in `bench.env.example` says a task with no
+    creation date is not eligible. It no longer says "when the dataset carries one".
+- **K89 The contamination sentence is limited in time.** `contamination` says:
+  - every task eligible on 2026-11-20 was created before Qwen3.8 was released in August
+    2026, so the model may have seen these tasks or their fixes in training;
+  - a split published later may add tasks created after that release, and stage `a`
+    records each task's creation date;
+  - suite A results are reported as possibly contaminated;
+  - every arm runs the same model, so the harness contrasts compare harnesses under the
+    same exposure.
+- **K90 The selection sentences can be followed without the code.**
+  - `stratify` defines its names:
+    - `seed` is `selection_seed`;
+    - `repos` is the distinct values of the eligible tasks' `repo` field;
+    - `ids` is one repository's `instance_id` values.
+  - It keeps the two calls of K86 exactly as code, so a reader can run them.
+  - The fallback names `hcbench.sampling.stratified_sample` at the recorded `repo.head`.
+  - It names `hcbench.sampling.select_suite_a` as the code of the whole rule.
+  - `if_fewer` says "n or fewer" and "stage a's pre-registration day".
+- **K91 Tests that tie the text to the code.**
+  - A test pulls the two calls out of `stratify` and runs them. On populations where at
+    least `n` repositories exist, the result must equal `select_suite_a`.
+  - A repeated `instance_id` raises `ValueError` even when `n` is at least the number of
+    instances.
+  - K84 also refuses `"2026_03\n"` and `" 2026_03"`.
+  - `eligible` mentions `test`, `YYYY_MM`, the text comparison, the missing date, and the
+    dataset revision. `contamination` mentions `2026-11-20`.
+- **K92 Docs.**
+  - §10.3 says which of its bullets still apply. §10.4 notes that suite A isn't
+    decontaminated either.
+  - The README says "split `2026_03` and later".
+  - `SPEC.md` lists `eligible`.
+  - The kit's `bench.env` gets the new values, and the runbook checks them with
+    `grep -E '^HC_A_MIN_(SPLIT|CREATED)=' config/bench.env`.
+- **Left to the loader (after the tag), from the same review:**
+  - refuse an empty suite A;
+  - coerce `instance_id` and `repo` to text;
+  - record the Python version, since the draws depend on CPython's `random`;
+  - update the stage-`a` `ANALYSIS_PLAN`, which still says "official swebench harness"
+    and "n=40".
 
 ## Sources
 

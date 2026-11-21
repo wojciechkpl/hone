@@ -58,8 +58,8 @@ no suite A task list: the pre-registration fixes the model, the sampling and the
 for suite A, and stage 2 records the task list later.
 
 **Suite A rules.** No public SWE-rebench task is from September 2026 or later, so suite A takes
-the newest ones: splits from `2026_03`, created on or after 2026-03-01 (110 tasks from 79
-repositories on 2026-11-20). They predate Qwen3.8, so suite A is reported as possibly
+the newest ones: split `2026_03` and later, created on or after 2026-03-01 (110 tasks from 79
+repositories on 2026-11-20). The `test` split, which holds every task, is ignored. They predate Qwen3.8, so suite A is reported as possibly
 contaminated. With so many small repositories, 60 tasks are drawn as one task from each of 60
 randomly drawn repositories (`select_suite_a` in [`SPEC.md`](SPEC.md) §2).
 
