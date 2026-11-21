@@ -13,7 +13,7 @@ hc-llm (vLLM) ◀── hc-proxy (metering, forced sampling, caps, records) ◀�
 - **Suites**
   - **A**: SWE-bench Lite, 40 tasks (pre-registered, stratified by repo, official grader).
     It is retired as the headline suite: stage 2 of campaign 1 replaces it with SWE-rebench
-    once the loader lands (design §10.3 and §11)
+    once the loader lands (design §10.3, §11 and §11.15)
   - **B**: the 10-task mini-bench (graded by check commands; never part of the headline)
   - **C**: red team, 20 risky calls + 5 planted injections, judged by tripwires
 - **Arms** (`config/arms.toml`): `pi`, `hone-noinject`, `hone-inject`, `hermes`, plus
@@ -56,6 +56,12 @@ Campaign 1 runs the safety suites first. Its scope and requirements are in
 [`harness-compare-v2`](../../docs/plans/harness-compare-v2-2026-11.md) §11. Stage 1 needs
 no suite A task list: the pre-registration fixes the model, the sampling and the *rules*
 for suite A, and stage 2 records the task list later.
+
+**Suite A rules.** No public SWE-rebench task is from September 2026 or later, so suite A takes
+the newest ones: splits from `2026_03`, created on or after 2026-03-01 (110 tasks from 79
+repositories on 2026-11-20). They predate Qwen3.8, so suite A is reported as possibly
+contaminated. With so many small repositories, 60 tasks are drawn as one task from each of 60
+randomly drawn repositories (`select_suite_a` in [`SPEC.md`](SPEC.md) §2).
 
 **Pinned versions.** Pi is `@earendil-works/pi-coding-agent` 1.5.0 on Node 22.23.4 (Pi
 needs Node 22.19 or newer; the build checks it). Every harness is told the served window; Hone

@@ -315,7 +315,7 @@ SWE-bench Lite as suite A, and our own 10-task suite G.
 flowchart LR
   M["vLLM: Qwen3.8-27B NVFP4<br/>thinking off · MTP · 64k · fp8 KV"] --- PX["hc-proxy<br/>T 0.7 · top_p 0.8 · top_k 20<br/>presence 1.5 · seed per repeat"]
   PX --- ARMS["pi · hone · hermes arms"]
-  ARMS --> A["A: SWE-rebench<br/>splits ≥ 2026_09"]
+  ARMS --> A["A: SWE-rebench<br/>splits ≥ 2026_03 (§11.15)"]
   ARMS --> G["G: Terminal-Bench 2.x<br/>offline-capable subset"]
   ARMS --> BCD["B · C · D (ours)"]
 ```
@@ -356,6 +356,11 @@ flowchart LR
   The main plan's §5.9 argument for temperature 0 no longer applies.
 
 ### 10.3 Suite A: SWE-rebench, decontaminated for this model
+
+> **Changed on 2026-11-20 (§11.15).** No public SWE-rebench task is from September 2026 or
+> later, so suite A takes the newest tasks (split `2026_03`, created from 2026-03-01) and
+> reports them as possibly contaminated. The selection rule below can't run on SWE-rebench;
+> K86 replaces it. The rest of this section still applies.
 
 - **Source:** `nebius/SWE-rebench-leaderboard` on Hugging Face, using the monthly splits
   named `YYYY_MM`. Grading uses SWE-rebench's fork of the SWE-bench harness
@@ -1188,6 +1193,89 @@ The review of round 9 found two bugs that appear only on a box that already has 
   (`pi_package`, `pi_installed_version`, `pi_lock_sha256`, `node_version`,
   `node_installed_version`). It also covers the Pi pre-registration refusal (K73, K79), the
   Node probe with `--engine-strict` (K70), the shared pinned install image (K75) and K78.
+
+### 11.15 Requirements, round 12 (suite A window and selection, 2026-11-20)
+
+Two problems came up on 2026-11-20, while starting the SWE-rebench loader. The stage-`cb`
+pre-registration records both in `[suite_a_rules]`, so the fix lands before the tag. The
+loader itself is a later change, as §11.1 planned.
+
+- **No task meets the window.** `nebius/SWE-rebench-leaderboard` (revision `34d5a588`, last
+  updated 2026-07-28) has monthly splits `2025_01` to `2026_03`. It also has `test`, which is
+  their union (860 tasks).
+  - The newest task was created on 2026-05-12, in split `2026_03`.
+  - Elsewhere: the leaderboard site's time window ends on 2026-07-01;
+    `nebius/SWE-rebench-V2` ends in October 2025 and SWE-bench-Live in September 2025.
+  - So no public SWE-rebench task is from September 2026 or later, and
+    `HC_A_MIN_SPLIT=2026_09` leaves suite A empty.
+  - The user decided on 2026-11-20 to use the newest tasks and to report them as possibly
+    contaminated.
+- **The selection rule can't run.** `sampling.allocate` gives every repository at least one
+  task, and it raises when `n` is smaller than the number of repositories.
+  - SWE-rebench has about 1.4 tasks per repository: split `2026_03` has 110 tasks from 79
+    repositories. With `n = 60`, "at least one task per repository" is impossible.
+  - The rule was written for SWE-bench Lite's 12 repositories. Every SWE-rebench window has
+    the same problem.
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  R12["Round 12<br/>window · selection · contamination"] --> TAG["Tag bench-prereg-c1<br/>records the suite A rules"]
+  TAG --> CB["Run C and B<br/>at the tag commit"]
+  TAG -.-> LD["Loader change<br/>after the tag"]
+  LD --> PA["Pre-register stage a<br/>task list · revision · digests"]
+  CB --> PA
+  PA --> RA["Run A<br/>4 arms × 60 × 2"]
+```
+
+Requirements:
+
+- **K83 The newest tasks.**
+  - `config/bench.env.example` sets `HC_A_MIN_SPLIT=2026_03` and
+    `HC_A_MIN_CREATED=2026-03-01`.
+  - Its comment says:
+    - on 2026-11-20 the newest public split is `2026_03`: 110 tasks from 79 repositories,
+      created 2026-03-01 to 2026-05-12;
+    - no task from September 2026 on is public;
+    - these tasks predate Qwen3.8 (August 2026), so the model may have seen them;
+    - a later split published before stage `a` is pre-registered is eligible too.
+  - `HC_A_DATASET`, `HC_A_N=60`, `HC_A_REPEATS` and `HC_A_GRADER` don't change.
+- **K84 The split name is checked.** Stage-`cb` validation refuses `HC_A_MIN_SPLIT` unless
+  it is four digits, an underscore and a month from `01` to `12` (for example `2026_03`).
+  The message names the key and the value, like the other K20 checks, and is never a
+  traceback. This applies to drafts too, as K20 does. Reason: the loader compares split
+  names as text, and `test` must never count as a month.
+- **K85 The contamination risk is recorded.** `[suite_a_rules]` gains `contamination`, a
+  sentence in `SUITE_A_TEXT`. It says:
+  - every eligible task was created before Qwen3.8 was released in August 2026, so the
+    model may have seen these tasks or their fixes in training;
+  - suite A results are reported as possibly contaminated;
+  - every arm runs the same model, so the harness contrasts compare harnesses under the
+    same exposure.
+- **K86 A selection rule that works with many small repositories.**
+  - The `stratify` sentence states the rule below. It names the two random generators, so
+    the rule can be checked from the pre-registration alone.
+  - `hcbench/sampling.py` gains `select_suite_a(instances, n, seed) -> list[str]`. Each
+    instance is a mapping with `instance_id` and `repo`. The result is sorted.
+    1. `n` below 1 raises `ValueError`. A repeated `instance_id` also raises `ValueError`.
+    2. When `n` is at least the number of instances, every instance id is returned.
+       Together with `if_fewer`, this covers the case of too few eligible tasks.
+    3. Otherwise, when the instances come from at least `n` repositories, it draws `n`
+       repositories with `random.Random(f"{seed}:repos").sample(sorted(repos), n)`. From
+       each drawn repository it takes one task with
+       `random.Random(f"{seed}:{repo}").sample(sorted(ids), 1)`.
+    4. Otherwise it returns `stratified_sample(instances, n, seed)`. That is the
+       largest-remainder rule with at least one task per repository, unchanged.
+  - The result depends only on the set of instances, not on their order.
+  - `allocate` and `stratified_sample` don't change.
+  - Nothing calls `select_suite_a` yet. The loader uses it at stage `a`.
+- **K87 Docs.**
+  - §10.3 and the §10 diagram point to this section.
+  - The README's campaign 1 section and `SPEC.md` give:
+    - the suite A window;
+    - the contamination label;
+    - the selection rule, with `select_suite_a` next to `allocate`.
+  - The runbook (outside the repository) gets the new values.
 
 ## Sources
 
