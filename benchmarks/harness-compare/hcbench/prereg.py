@@ -134,12 +134,14 @@ SUITE_A_TEXT = {
     "with no creation date is not eligible. Splits published before stage a is pre-registered "
     "count, and stage a records the dataset revision.",
     "stratify": "Here seed is selection_seed, repos is the distinct values of the eligible tasks' "
-    "repo field, and ids is one repository's instance_id values. Draw n repositories with "
+    "repo field, and ids is the instance_id values of that repo. The if_fewer rule applies "
+    "first. Otherwise draw n repositories with "
     'random.Random(f"{seed}:repos").sample(sorted(repos), n), '
-    "then one task from each repo with "
+    "then one task from each drawn repo with "
     'random.Random(f"{seed}:{repo}").sample(sorted(ids), 1). '
-    "If fewer than n repositories are eligible, use hcbench.sampling.stratified_sample at the "
-    "recorded repo.head (largest-remainder rule, at least one task per repository). "
+    "If the eligible tasks come from fewer than n repositories, use "
+    "hcbench.sampling.stratified_sample at the recorded repo.head instead (largest-remainder "
+    "rule, at least one task per repository). "
     "The code of the whole rule is hcbench.sampling.select_suite_a.",
     "contamination": "Every task eligible on 2026-11-20 was created before Qwen3.8 was released in "
     "August 2026, so the model may have seen these tasks or their fixes in training. A later "
