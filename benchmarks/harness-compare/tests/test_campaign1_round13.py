@@ -23,6 +23,11 @@ def test_k88_eligible_should_mention(env, token):
     assert token in load_cb(env)["suite_a_rules"]["eligible"], token
 
 
+@pytest.mark.parametrize("token", ["four digits", "underscore", "01 to 12"])
+def test_k88_eligible_should_state_the_split_format(env, token):
+    assert token in load_cb(env)["suite_a_rules"]["eligible"], token
+
+
 def test_k88_eligible_should_say_a_task_without_a_date_is_not_eligible(env):
     text = " ".join(load_cb(env)["suite_a_rules"]["eligible"].lower().split())
     assert "no creation date" in text
@@ -111,7 +116,7 @@ def _calls(text: str) -> list[str]:
 
 def _populations():
     pops = []
-    # 79 repositories, 110 tasks, with ids in a scrambled order.
+    # 79 repositories, 110 tasks, (ids are shuffled per repository inside the test).
     spec = {f"org/repo{r:02d}": 2 if r < 31 else 1 for r in range(79)}
     pops.append((make(spec), (60, 40, 79), 20261109))
     pops.append((make({f"o/r{i}": 1 + i % 3 for i in range(9)}), (3, 5, 9), 1))
@@ -140,6 +145,7 @@ def test_k91_calls_in_stratify_should_reproduce_select_suite_a(env, pop_index):
             got = []
             for repo in drawn:
                 ids = list(by_repo[repo])
+                random.Random(f"{seed}:{repo}:ids").shuffle(ids)
                 got += eval(draw_one, {"random": random, "seed": seed, "repo": repo, "ids": ids})
             assert sorted(got) == sampling.select_suite_a(inst, n, seed), (n, seed)
 
@@ -160,7 +166,6 @@ def test_k91_validate_stage_cb_should_refuse_split_with_whitespace(value, draft)
     vals = example_env()
     vals["HC_A_MIN_SPLIT"] = value
     if not draft:
-        pytest.importorskip("hcbench")
         from fakebin import SHA40, VLLM_PINNED
 
         vals.update({"HC_SERVER": "vllm", "HC_MODEL_REVISION": SHA40, "HC_VLLM_IMAGE": VLLM_PINNED})
