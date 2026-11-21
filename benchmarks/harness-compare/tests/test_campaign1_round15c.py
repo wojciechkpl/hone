@@ -204,7 +204,8 @@ def test_k138_a_test_timeout_should_be_ambiguous(tmp_path, monkeypatch):
 
 
 def test_k134_apply_failure_should_still_take_precedence(tmp_path, monkeypatch):
-    log = run_log("a__a-1", INFRA) + ">>>>> Patch Apply Failed\n"
+    # K143: the harness's own INFO line, written through the fork's Formatter.
+    log = run_log("a__a-1", INFRA) + fork_log(("info", ">>>>> Patch Apply Failed"))
     _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
     assert outcomes(camp)["a__a-1"] == ("0", "apply_failed")
 
