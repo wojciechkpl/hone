@@ -152,7 +152,7 @@ def test_k11_suite_a_rules_should_use_the_named_keys(env):
     cb = load_cb(env)
     rules = cb["suite_a_rules"]
     assert rules["dataset"] == "nebius/SWE-rebench-leaderboard"
-    assert rules["min_split"] == "2026_09"
+    assert rules["min_split"] == "2026_03"
     assert rules["n"] == 60
     assert rules["repeats"] == [0, 1]
     assert rules["grader"] == "SWE-rebench/SWE-bench-fork"
