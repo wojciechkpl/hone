@@ -1669,6 +1669,58 @@ The review of round 14 found the frozen selection rules implemented exactly, and
   - **K128 README.** The stage-`a` paragraph mentions the K116 refusal, and no line is
     longer than the file's other lines.
 
+#### Round 15b: from the review of round 15 (K129–K133)
+
+The review of round 15 found that the fork can't tell a broken grading environment from a
+failed patch.
+- swebench 5.0.2 flags infrastructure failures from its logs, and `hcbench.grade`
+  re-grades them (`swebench/harness/infra_failure.py`, `classify_logs`).
+- The fork (4.0.3) has no such step. Every instance without a `report.json` lands in
+  `error_ids`: a failed image pull, a container that can't be created, a Docker API
+  timeout, a test timeout and a patch that doesn't apply.
+- So K109 is wrong for the fork. As written, a grading failure would count as the arm's
+  failure, and "grader infrastructure errors are re-graded" (K101) couldn't hold.
+
+- **K129 Classify the fork's logs.**
+  - In fork mode, `hcbench.grade` classifies each instance in `unresolved_ids` or
+    `error_ids`. It reads that instance's `run_instance.log` and `test_output.txt` under
+    `logs/run_evaluation/<run_id>/<model>/<instance>/`.
+  - The signatures are swebench 5.0.2's `INFRA_FAILURE_SIGNATURES`, in the same order with
+    the same tiers (MIT licence, credited in a comment). Three more come first, all in the
+    environment tier, because only the fork writes them:
+    - `image_unavailable`: `Error building image|Error occurred while pulling image`;
+    - `container_create_failed`: `Error creating container`;
+    - `docker_api_timeout`: `Read timed out|UnixHTTPConnectionPool`.
+  - The apply-failure line `>>>>> Patch Apply Failed` keeps precedence: that instance is
+    `apply_failed`.
+  - Otherwise:
+    - an environment-tier match is `grader_infra`;
+    - an ambiguous-tier match is `ambiguous`;
+    - no match leaves `unresolved` or `error`.
+  - The SWE-bench Lite path is unchanged.
+- **K130 A final rule for ambiguous results (fork mode).**
+  - `grader_infra` and `ambiguous` are re-graded, as today.
+  - An instance whose first grade and every re-grade are `ambiguous`, over at least two
+    attempts, gets status `ambiguous_repeated` and counts as unresolved (resolved = 0).
+    A test timeout or a missing module that repeats is the patch's doing.
+  - `grader_infra` never becomes final. It stays blank until a re-grade clears it.
+  - `ANALYSIS_PLAN_A`'s exclusions text says so, and the report lists every
+    `ambiguous_repeated` run.
+- **K131 Grade with the pre-registered fork.**
+  - `scripts/20_grade.sh` takes the fork commit and namespace from the stage-`a` file's
+    `[grader]` table.
+  - If `HC_A_GRADER_REF` or `HC_A_NAMESPACE` is set and differs from that table, it stops
+    and names both values.
+- **K132 Record what graded.** `grading/grader.json` also records the installed `swebench`
+  and `docker` package versions, as read with `importlib.metadata` inside the grading
+  environment.
+- **K133 Gaps the review found.**
+  - The preflight compares the `HC_A_*` rule values unstripped, so a padded value such as
+    `" 2026_03"` is refused before any selection.
+  - A test pins that the fork argv has no `--split`.
+  - A test pins that a bundle manifest that is valid JSON but not an object (`[]`) is
+    refused (K124).
+
 #### Round 16: the stage-`a` report (K110–K113)
 
 - **K110 Label.** With a stage-`a` pre-registration, the suite A heading is
