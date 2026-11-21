@@ -1721,6 +1721,54 @@ failed patch.
   - A test pins that a bundle manifest that is valid JSON but not an object (`[]`) is
     refused (K124).
 
+#### Round 15c: from the review of round 15b (K134–K137)
+
+The review of round 15b found two problems with K129 and K130:
+- **The classification reads text the agent controls.** The fork writes the applied patch
+  into `run_instance.log` ("Git diff before:" / "Git diff after:"), and `test_output.txt` is
+  the project's own test output. A patch that adds `except ModuleNotFoundError:` would
+  re-grade a run whose tests ran and failed, giving a flaky test another chance.
+- **A run can stay unscored for ever.** `grader_infra` was never final, and one early
+  `grader_infra` blocked `ambiguous_repeated`.
+
+K134–K136 replace the parts of K129 and K130 they name.
+
+- **K134 Classify only the harness's own error, only for errors.**
+  - **Which instances.** In fork mode, only `error_ids` instances are classified. An
+    instance in `unresolved_ids` ran its tests and stays `unresolved`, as on the SWE-bench
+    Lite path, where `unresolved_ids` is checked before any infrastructure flag.
+  - **Which text.** Only the error block is matched: the text after the last line of
+    `run_instance.log` that starts with `Error in evaluating model for <instance id>:`, up
+    to the end of the file.
+    - This block holds the harness's exception and traceback.
+    - The Git diff sections and `test_output.txt` are never read.
+    - With no such line, the instance stays `error`.
+  - **The fork's timeout.** It puts `Test timed out after N seconds.` in the error block, so
+    `tests_timed_out` also matches `Test timed out after \d+ seconds` (ambiguous tier).
+  - **Precedence.** Apply failure (`>>>>> Patch Apply Failed`) still takes precedence.
+- **K135 Every run ends judged or listed.**
+  - **Ambiguous runs.** An instance is `ambiguous_repeated`, counted as unresolved
+    (resolved = 0), when it has at least two attempts after its last `grader_infra`
+    attempt and every one of them is `ambiguous`.
+  - **Grader failures.** After three attempts in a row that end `grader_infra`, an
+    instance is `grader_infra_final`:
+    - it is no longer re-graded;
+    - its `resolved` stays blank, so it is left out of pass@1;
+    - the report lists it as unjudged, per arm.
+  - **The recorded text.** `ANALYSIS_PLAN_A`'s exclusions text states both rules.
+- **K136 Fork grading needs the stage-`a` file.**
+  - In fork mode, `scripts/20_grade.sh` stops when `prereg/<name>/preregistration.toml` is
+    missing, or when its `stage` isn't `a`. There is no fallback to the environment.
+  - The round 15 grading test rigs write a minimal stage-`a` file: `stage = "a"` and
+    `[grader]` with `commit` and `namespace`.
+- **K137 Tests that pin the corrections:**
+  - `[grader_infra, ambiguous, ambiguous]` → `ambiguous_repeated`;
+  - `[grader_infra] × 3` → `grader_infra_final`, with no fourth attempt;
+  - an unresolved instance whose patch text or test output contains a signature stays
+    `unresolved`;
+  - an error instance whose signature text appears only in the Git diff section or in
+    `test_output.txt` stays `error`.
+
 #### Round 16: the stage-`a` report (K110–K113)
 
 - **K110 Label.** With a stage-`a` pre-registration, the suite A heading is
