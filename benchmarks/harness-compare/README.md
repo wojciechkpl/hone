@@ -155,41 +155,67 @@ git add prereg/c1-a
 git commit -m "bench: pre-register campaign 1, stage a"
 git tag bench-prereg-c1-a
 git push origin HEAD bench-prereg-c1-a
+
+make run-a CAMPAIGN=c1-a                 # HC_ARMS_MAIN at HC_A_REPEATS, on the pinned images
+scripts/20_grade.sh c1-a                 # the SWE-rebench fork; add --regrade for re-grades
 ```
 
-`make prereg` doesn't pass `--accept-diff`. When a difference from the stage-`cb` file has to go
-through, call the script directly:
+`make prereg` doesn't pass `--accept-diff`. When a difference from the stage-`cb` file has to
+go through, call the script directly:
 
 ```bash
 scripts/05_preregister.sh c1-a --stage a --rules prereg/c1/preregistration.toml --accept-diff KEY
 ```
 
-`scripts/05_preregister.sh` first runs `hcbench.prereg --preflight`, which checks the rules, the
-config, the bundle and the file hashes against the stage-`cb` file before it creates a
-directory, selects or pulls anything. Then it runs, in order: `python -m hcbench.rebench select` (eligible
-splits and dates, then `select_suite_a`; the dataset revision from `HC_A_REVISION`, empty
-meaning the hub's main, is resolved to a commit); the image pulls and their digests
-(`images.digests`); `python -m hcbench.rebench check-images` (each pinned image runs once
-with no network; a task whose HEAD is not the base commit, whose `git status` is not empty or
-whose Python doesn't run is excluded and listed; a Docker error, exit 125, stops the check
-instead, and the whole check is run again); then `hcbench.prereg --stage a`.
+`scripts/05_preregister.sh` first runs `hcbench.prereg --preflight`. It checks the rules, the
+config, the bundle and the file hashes against the stage-`cb` file, and the checks that need
+only the environment, before it creates a directory, selects or pulls anything. Then it runs,
+in order:
+1. `python -m hcbench.rebench select`: eligible splits and dates, then `select_suite_a`. The
+   dataset revision from `HC_A_REVISION` (empty: the hub's main) is resolved to a commit. A new
+   selection removes any `images.digests` and `images.check.json` left in its directory.
+2. The image pulls and their digests (`images.digests`).
+3. `python -m hcbench.rebench check-images`: each pinned image runs once with no network. A task
+   whose HEAD is not the base commit, whose `git status` is not empty or whose Python doesn't
+   run is excluded and listed. A Docker error, exit 125, stops the check, and the whole check
+   is run again.
+4. `hcbench.prereg --stage a`.
+
 `HC_SKIP_PULL=1` is accepted only with `--draft`. The images are large (1.4 to 2.1 GB each).
 
-`hcbench.prereg --stage a --rules <stage-cb file>` refuses when the file is missing, not
-stage `cb`, or a draft; when the selection's dataset, `min_split`, `min_created`, `n`, seed
-or grader differ from the stage-`cb` `[suite_a_rules]` (nothing overrides this); and when a
-`[config]` key, the bundle or a shared `files_sha256` hash (`arms.toml` and the Dockerfiles among
-them) differs from the stage-`cb` file; accept a hash with `--accept-diff files_sha256.<key>`.
-`n = 40` is accepted without `--accept-diff` when the stage-`cb` `cut_order` has exactly
-"suite A tasks 60 -> 40"; the file then records `[rules_check] cut`. `--accept-diff KEY` (`bundle`
-for the bundle) lets a named difference through. It is then listed under
-`[rules_check] accepted` with both values, and it must also be logged in
-`prereg/c1/DEVIATIONS.md`. A non-draft file also refuses an `HC_A_GRADER_REF` that isn't 40
-lowercase hex characters, an empty `HC_A_NAMESPACE`, and an `images.digests` line that says
-`MISSING` or isn't `<image> <name>@sha256:<64 hex>`.
+`hcbench.prereg --stage a --rules <stage-cb file>` refuses when:
+- the file is missing, not stage `cb`, or a draft;
+- the selection's dataset, `min_split`, `min_created`, `n`, seed or grader differ from the
+  stage-`cb` `[suite_a_rules]` (nothing overrides this);
+- a `[config]` key, the bundle or a shared `files_sha256` hash (`arms.toml` and the Dockerfiles
+  among them) differs from the stage-`cb` file;
+- the image check is unfinished: `images.check.json` is missing, `run_digest` is missing or
+  differs from `tasks.txt`, an excluded task is still in `tasks.txt`, or `tasks.txt` with the
+  excluded tasks doesn't match the drawn list;
+- an `HC_A_GRADER_REF` isn't 40 lowercase hex characters, `HC_A_NAMESPACE` is empty, or an
+  `images.digests` line says `MISSING` or isn't `<image> <name>@sha256:<64 hex>` (non-draft).
+
+`--accept-diff KEY` lets a named difference through (`bundle` for the bundle,
+`files_sha256.<key>` for a hash). It is then listed under `[rules_check] accepted` with both
+values, and it must also be logged in `prereg/c1/DEVIATIONS.md`. `n = 40` is accepted without
+it when the stage-`cb` `cut_order` has exactly "suite A tasks 60 -> 40"; the file then records
+`[rules_check] cut`.
+
+**Runs.** `make run-a CAMPAIGN=c1-a` reads `prereg/c1-a/` (`HC_PREREG` overrides the name).
+It stops if `images.digests` is missing. Each task runs its pinned `<name>@sha256:` image, and
+a task with no pinned image stops the run before any container starts. A task whose image
+starts with `swerebench/` runs with the `testbed` env first on its `PATH`.
+
+**Grading.** When `prereg/c1-a/selection.json` names `SWE-rebench/SWE-bench-fork` as grader,
+`scripts/20_grade.sh` installs the fork at `HC_A_GRADER_REF` (it refuses a ref that isn't 40
+lowercase hex characters) and grades on the pinned images with `HC_A_NAMESPACE` and
+`--cache_level instance`. `hcbench.grade` writes `grading/dataset.pinned.json` (the chosen rows
+with `image_name` and `docker_image` set to the pinned reference) and `grading/grader.json`
+(the fork's repository, commit, namespace and the dataset file's sha256). Any other grader
+keeps `swebench==5.0.2`.
 
 Suite A results are reported as possibly contaminated (see **Suite A rules** above).
-The runs and the grading through the SWE-rebench fork follow in later changes.
+The stage-`a` report follows in a later change.
 
 ## Day-to-day
 

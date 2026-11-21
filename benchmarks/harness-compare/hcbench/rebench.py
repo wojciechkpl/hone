@@ -24,11 +24,10 @@ from pathlib import Path
 from typing import Any
 
 from .sampling import manifest_digest, select_suite_a
-from .suites import REBENCH_PATH
+from .suites import REBENCH_PATH, parse_digests
 
 SPLIT_NAME = re.compile(r"[0-9]{4}_(0[1-9]|1[0-2])")
 ISO_DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
-PINNED = re.compile(r"\S+@sha256:[0-9a-f]{64}")
 METHOD = "hcbench.sampling.select_suite_a"
 IMAGE_WORKDIR = "/testbed"
 DOCKER_ERROR = 125  # docker run's own failure (daemon, disk, pull), never a bad image
@@ -205,6 +204,8 @@ def select(args: argparse.Namespace) -> int:
     ]
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    for stale in ("images.digests", "images.check.json"):  # K125: a new selection starts clean
+        (out / stale).unlink(missing_ok=True)
     (out / "tasks.txt").write_text("".join(f"{i}\n" for i in sorted(chosen)))
     (out / "instances.jsonl").write_text(
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in instances)
@@ -219,15 +220,6 @@ def select(args: argparse.Namespace) -> int:
 
 
 # ---- check-images ------------------------------------------------------------------------
-
-
-def parse_digests(path: Path) -> dict[str, str]:
-    pinned: dict[str, str] = {}
-    for line in path.read_text().splitlines():
-        parts = line.split()
-        if len(parts) == 2 and PINNED.fullmatch(parts[1]):
-            pinned[parts[0]] = parts[1]
-    return pinned
 
 
 def judge(proc: subprocess.CompletedProcess, base_commit: str) -> dict[str, Any]:

@@ -20,7 +20,13 @@ from .arms import load_arms, render
 from .config import ROOT, BenchConfig, ensure_env
 from .prereg import dirty_paths, pre_registered_files, repo_head, sha256_file
 from .runner import execute_run
-from .suites import Task, load_redteam_suite, load_swebench_suite, load_task_suite
+from .suites import (
+    Task,
+    load_redteam_suite,
+    load_swebench_suite,
+    load_task_suite,
+    parse_digests,
+)
 
 DEFAULT_SUITE_FILES = {
     "b": ROOT / "suites" / "b_mini.toml",
@@ -38,7 +44,15 @@ def load_tasks(args: argparse.Namespace, cfg: BenchConfig) -> list[Task]:
             ids = [
                 ln.strip() for ln in Path(args.tasks_file).read_text().splitlines() if ln.strip()
             ]
-        return load_swebench_suite(Path(args.instances), Path(args.prompt), cfg, ids)
+        if not args.image_digests:
+            raise SystemExit("suite a needs --image-digests (prereg images.digests)")
+        pinned = parse_digests(Path(args.image_digests))
+        try:
+            return load_swebench_suite(
+                Path(args.instances), Path(args.prompt), cfg, ids, pinned=pinned
+            )
+        except ValueError as e:
+            raise SystemExit(str(e)) from e
     path = Path(args.suite_file) if args.suite_file else DEFAULT_SUITE_FILES[args.suite]
     if args.suite == "c":
         return load_redteam_suite(path, cfg)
@@ -55,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--suite-file", help="override suite TOML (b, c, smoke)")
     ap.add_argument("--instances", help="suite a: instances.jsonl from select_tasks")
     ap.add_argument("--tasks-file", help="suite a: pre-registered tasks.txt (one id per line)")
+    ap.add_argument("--image-digests", help="suite a: prereg images.digests (pinned references)")
     ap.add_argument("--prompt", default=str(ROOT / "config" / "prompts" / "swebench.md"))
     ap.add_argument("--task-ids", help="comma-separated subset of task ids")
     ap.add_argument("--limit", type=int, help="first N tasks only (debugging)")
@@ -124,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
         "suite_file": str(args.suite_file or DEFAULT_SUITE_FILES.get(args.suite, "")),
         "instances": args.instances,
         "tasks_file": args.tasks_file,
+        "image_digests": args.image_digests,
         "prompt": args.prompt if args.suite == "a" else None,
         "config": cfg.as_dict(),
         # Evidence for the report's conformance check (spec 11.6 K43).

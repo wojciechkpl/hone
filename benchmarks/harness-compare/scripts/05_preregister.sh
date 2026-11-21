@@ -27,7 +27,7 @@ for arg in "$@"; do
     case "${expect}" in
     stage) stage="${arg}" ;;
     rules) rules_path="${arg}" ;;
-    accept) accept+=(--accept-diff "${arg}") ;;
+    accept) [[ -n "${arg}" ]] || die "--accept-diff needs a value"; accept+=(--accept-diff "${arg}") ;;
     esac
     expect=""; continue
   fi
@@ -37,7 +37,9 @@ for arg in "$@"; do
   --rules) expect=rules ;;
   --rules=*) rules_path="${arg#--rules=}" ;;
   --accept-diff) expect=accept ;;
-  --accept-diff=*) accept+=(--accept-diff "${arg#--accept-diff=}") ;;
+  --accept-diff=*)
+    [[ -n "${arg#--accept-diff=}" ]] || die "--accept-diff needs a value"
+    accept+=(--accept-diff "${arg#--accept-diff=}") ;;
   --draft) draft=1 ;;
   *) ;;
   esac

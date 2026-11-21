@@ -26,6 +26,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from .suites import parse_digests
+
 APPLY_PATCH_FAIL = ">>>>> Patch Apply Failed"
 REGRADE = {"grader_infra", "ambiguous", "missing"}
 
@@ -90,11 +92,40 @@ def status_for(iid: str, report: dict, rdir: Path, swe_run_id: str) -> str:
     return "missing"
 
 
+def write_pinned_dataset(args, gdir: Path) -> Path:
+    """K108: the rows of --dataset with both image fields replaced by the pinned reference.
+    Refuses an empty namespace and a row with no pinned image. Writes grader.json too."""
+    if not (args.namespace or "").strip():
+        raise SystemExit("--namespace must not be empty: the fork would build environment images")
+    pinned = parse_digests(args.image_digests)
+    rows = json.loads(Path(args.dataset).read_text())
+    for r in rows:
+        image = r.get("image_name") or r.get("docker_image")
+        if image not in pinned:
+            raise SystemExit(f"task {r['instance_id']} has no pinned image for {image}")
+        r["image_name"] = r["docker_image"] = pinned[image]
+    gdir.mkdir(parents=True, exist_ok=True)
+    out = gdir / "dataset.pinned.json"
+    out.write_text(json.dumps(rows, indent=1, ensure_ascii=False) + "\n")
+    record = {
+        "repo": args.grader_repo,
+        "commit": args.grader_commit,
+        "namespace": args.namespace,
+        "dataset_sha256": hashlib.sha256(out.read_bytes()).hexdigest(),
+    }
+    (gdir / "grader.json").write_text(json.dumps(record, indent=1) + "\n")
+    return out
+
+
 def evaluate(args, pred_path: Path, out_dir: Path, run_id: str, ids: list[str]) -> dict | None:
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.image_digests:  # fork mode: a local pinned file; the fork ignores --split
+        dataset = ["--dataset_name", str(args.pinned_dataset.resolve()),
+                   "--namespace", args.namespace, "--cache_level", args.cache_level]  # fmt: skip
+    else:
+        dataset = ["--dataset_name", args.dataset, "--split", args.split]
     cmd = [
-        sys.executable, "-m", "swebench.harness.run_evaluation",
-        "--dataset_name", args.dataset, "--split", args.split,
+        sys.executable, "-m", "swebench.harness.run_evaluation", *dataset,
         "--predictions_path", str(pred_path.resolve()),
         "--run_id", run_id,
         "--max_workers", str(args.max_workers),
@@ -125,6 +156,11 @@ def main(argv: list[str] | None = None) -> int:
         help="HF dataset name, or the pinned prereg/<name>/dataset.json (preferred)",
     )
     ap.add_argument("--split", default="test")
+    ap.add_argument("--image-digests", type=Path, help="fork mode: prereg images.digests")
+    ap.add_argument("--namespace", help="fork mode: registry namespace (never empty)")
+    ap.add_argument("--cache-level", default="instance", help="fork mode")
+    ap.add_argument("--grader-repo", help="fork mode: recorded in grading/grader.json")
+    ap.add_argument("--grader-commit", help="fork mode: recorded in grading/grader.json")
     ap.add_argument("--max-workers", type=int, default=8)
     ap.add_argument("--timeout", type=int, default=1800)
     ap.add_argument(
@@ -138,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     if not groups:
         raise SystemExit(f"no finished suite-a runs under {args.campaign}/a")
     gdir = args.campaign / "grading"
+    if args.image_digests:
+        args.pinned_dataset = write_pinned_dataset(args, gdir)
     gdir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
     for (arm, seed), preds in sorted(groups.items()):

@@ -674,6 +674,33 @@ def sampling_table(env: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def read_bundle(path: Path) -> dict[str, Any]:
+    """K124: the bundle manifest as recorded; a malformed or unreadable one stops, naming it."""
+    if not path.exists():
+        return {}
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"cannot read the bundle manifest {path}: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise SystemExit(f"the bundle manifest {path} is not a JSON object")
+    return {k: v for k, v in manifest.items() if v is not None}  # null: not in TOML
+
+
+def check_env_only(
+    env: dict[str, str], draft: bool, placeholders: list[str], manifest: Path, stage_a: bool
+) -> None:
+    """K126: every check that needs only the environment, with the same draft rules in the
+    preflight and in the final step."""
+    if stage_a and not draft:
+        validate_stage_a(env)
+    if placeholders and not draft:
+        raise SystemExit(f"refusing to pre-register with placeholders: {placeholders}")
+    check_hermes_bundle(env, manifest)
+    if not draft:
+        check_pi_bundle(env, manifest)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--stage", choices=["cb", "a"], default="a", help="default: a")
@@ -705,25 +732,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.stage == "a":
         env.update({k: os.environ.get(k, "") for k in A_ENV_KEYS})
     bundle_manifest = Path(os.environ.get("HC_BUNDLE_DIR", ROOT / ".bundle")) / "manifest.json"
-    manifest = json.loads(bundle_manifest.read_text()) if bundle_manifest.exists() else {}
-    bundle = {k: v for k, v in manifest.items() if v is not None}  # null: not in TOML
+    bundle = read_bundle(bundle_manifest)
     files = pre_registered_files()
+    placeholders = [k for k, v in env.items() if "CHANGE-ME" in v]
     if args.preflight:
         cb, _ = read_rules(args.rules)
         check_rules_env(env, cb)
+        check_env_only(env, args.draft, placeholders, bundle_manifest, stage_a=True)
         hashes = {k: sha256_file(p) for k, p in files.items() if p.exists()}
         diff_against_cb(cb, env, bundle, hashes, args.accept_diff)
         print("preflight: the rules, config, bundle and files match the stage cb file")
         return 0
     if args.stage == "cb":
         validate_stage_cb(env, draft=args.draft)
-    placeholders = [k for k, v in env.items() if "CHANGE-ME" in v]
-    if placeholders and not args.draft:
-        raise SystemExit(f"refusing to pre-register with placeholders: {placeholders}")
-
-    check_hermes_bundle(env, bundle_manifest)
-    if not args.draft:
-        check_pi_bundle(env, bundle_manifest)
+    check_env_only(env, args.draft, placeholders, bundle_manifest, stage_a=args.stage == "a")
     head = repo_head()
     if not head and not args.draft:
         raise SystemExit("refusing to pre-register: git cannot read the repository head")
@@ -762,8 +784,6 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sel_dir = args.selection.parent
         selection = json.loads(args.selection.read_text())
-        if not args.draft:
-            validate_stage_a(env)
         cb, cb_sha = read_rules(args.rules)
         cut = check_rules_env(env, cb)
         check_selection(selection, env, cb)

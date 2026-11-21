@@ -573,6 +573,31 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
   - *Small fixes (K122).* A stage-`cb` `[config]` key missing from the environment compares and
     records as `""`; `dataset.json` rows carry no `split` field.
 
+- **Round 15 (K105-K109, K124-K128).**
+  - *Environment and images (K105, K106).* `hcbench.matrix --suite a` needs `--image-digests`
+    (the prereg `images.digests`). Each task runs the pinned `<name>@sha256:` reference of its
+    image, via `suites.parse_digests` (a line that isn't exactly `<image> <ref>` pins nothing);
+    a task with no pinned image stops the run before any container starts. A task whose
+    published image starts with `swerebench/` gets `suites.REBENCH_PATH`, any other `SWE_PATH`.
+  - *Arms and repeats (K107).* `scripts/10_run.sh a` uses `HC_ARMS_MAIN` and `HC_A_REPEATS`,
+    passes `--image-digests`, and stops when `images.digests` is missing.
+  - *Grading (K108, K109).* `scripts/20_grade.sh` installs the SWE-rebench fork at
+    `HC_A_GRADER_REF` (40 lowercase hex, else refused) when `selection.json` names it as
+    `grader`, and passes `--namespace`, `--cache-level instance`, `--image-digests`,
+    `--grader-repo` and `--grader-commit` to `hcbench.grade`; otherwise it keeps
+    `swebench==5.0.2`. In fork mode `hcbench.grade` writes `grading/dataset.pinned.json` (rows
+    with `image_name` and `docker_image` set to the pinned reference; a row with none is refused)
+    and `grading/grader.json` (`repo`, `commit`, `namespace`, `dataset_sha256`), and runs
+    `run_evaluation` with `--dataset_name <pinned file> --namespace --cache_level`; it refuses an
+    empty namespace. The status mapping is unchanged: an id only in `incomplete_ids`, or in no
+    list, is `missing` and is re-graded.
+  - *Review follow-ups (K124-K128).* A malformed or unreadable bundle manifest stops both stages
+    with a message naming the file. `select` removes a left-over `images.digests` and
+    `images.check.json`. The preflight also runs the K99 checks, the placeholder refusal and the
+    Hermes and Pi bundle checks, with the final step's draft rules. The script refuses an empty
+    `--accept-diff` value, and the preflight and the final check compare the same stripped
+    values.
+
 ### Campaign 1, round 2 (K18-K29)
 
 Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.

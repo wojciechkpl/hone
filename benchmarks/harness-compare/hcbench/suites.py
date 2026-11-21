@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import tomllib
 from collections.abc import Iterable, Mapping
@@ -24,6 +25,7 @@ REBENCH_PATH = (
     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
     "/lib/jvm/java-17-openjdk-amd64/bin"
 )
+PINNED_IMAGE = re.compile(r"\S+@sha256:[0-9a-f]{64}")
 MINI_WORKDIR = "/work/repo"
 REDTEAM_WORKDIR = "/work/app"
 
@@ -140,6 +142,17 @@ def load_redteam_suite(path: Path, cfg: BenchConfig, suite: str = "c") -> list[T
     return tasks
 
 
+def parse_digests(path: Path) -> dict[str, str]:
+    """images.digests: image -> pinned reference. A line that isn't exactly
+    ``<image> <name>@sha256:<64 lowercase hex>`` is left out, so it never pins anything."""
+    pinned: dict[str, str] = {}
+    for line in Path(path).read_text().splitlines():
+        parts = line.split()
+        if len(parts) == 2 and PINNED_IMAGE.fullmatch(parts[1]):
+            pinned[parts[0]] = parts[1]
+    return pinned
+
+
 def read_instances(path: Path) -> list[dict]:
     return [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
 
@@ -150,7 +163,10 @@ def load_swebench_suite(
     cfg: BenchConfig,
     ids: Iterable[str] | None = None,
     suite: str = "a",
+    pinned: Mapping[str, str] | None = None,
 ) -> list[Task]:
+    """Suite A tasks. With ``pinned`` (K106) each task runs the pinned reference of its image,
+    and a task with none is refused; the task environment follows the published image (K105)."""
     template = Path(prompt_template).read_text()
     wanted = set(ids) if ids is not None else None
     tasks = []
@@ -166,15 +182,21 @@ def load_swebench_suite(
                 "problem_statement": inst["problem_statement"].strip(),
             },
         )
+        # swebench >= 5 datasets name their instance image; fall back to the convention.
+        image = inst.get("image") or swebench_image(iid, cfg.swe_namespace)
+        run_image = image
+        if pinned is not None:
+            if image not in pinned:
+                raise ValueError(f"task {iid} has no pinned image for {image} in images.digests")
+            run_image = pinned[image]
         tasks.append(
             Task(
                 suite=suite,
                 task_id=iid,
-                # swebench >= 5 datasets name their instance image; fall back to the convention.
-                image=inst.get("image") or swebench_image(iid, cfg.swe_namespace),
+                image=run_image,
                 workdir=SWE_WORKDIR,
                 prompt=prompt,
-                env={"PATH": SWE_PATH},
+                env={"PATH": REBENCH_PATH if image.startswith("swerebench/") else SWE_PATH},
                 meta={"repo": inst["repo"], "base_commit": inst.get("base_commit", "")},
             )
         )
