@@ -582,13 +582,17 @@ def test_k104_a_failing_task_should_be_excluded_with_the_failed_part(tmp_path, m
     assert res["a__a-1"]["ok"] is True and res["b__b-2"]["ok"] is False
 
 
-def test_k104_a_container_that_does_not_start_should_be_excluded_not_crash(tmp_path, monkeypatch):
+def test_k115_docker_exit_125_should_stop_the_check_and_write_nothing(tmp_path, monkeypatch):
+    # Round 14b (K115) replaces the round 14 reading, where 125 excluded the task: 125 is
+    # Docker's own error, and an exclusion is final.
     heads = make_sel_dir(tmp_path, IDS[:2])
+    before = {n: (tmp_path / n).read_bytes() for n in ("tasks.txt", "selection.json")}
     docker = Docker({pinned("a__a-1"): good(heads["a__a-1"]), pinned("b__b-2"): (125, "")})
-    assert check(tmp_path, monkeypatch, docker) == 0
-    assert (tmp_path / "tasks.txt").read_text() == "a__a-1\n"
-    excluded = json.loads((tmp_path / "selection.json").read_text())["excluded"]
-    assert list(excluded) == ["b__b-2"] and excluded["b__b-2"]
+    with pytest.raises(SystemExit) as exc:
+        check(tmp_path, monkeypatch, docker)
+    assert "b__b-2" in str(exc.value)
+    assert {n: (tmp_path / n).read_bytes() for n in before} == before
+    assert not (tmp_path / "images.check.json").exists()
 
 
 def test_k104_should_not_touch_a_task_by_its_run_outcome(tmp_path, monkeypatch):
