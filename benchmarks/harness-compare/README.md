@@ -230,6 +230,11 @@ apply failure stays an apply failure, and an error with no block stays `error`.
   `ambiguous_repeated`, counted as unresolved.
 - Three `grader_infra` attempts in a row: `grader_infra_final`. It is no longer re-graded, its
   `resolved` stays blank (left out of pass@1), and the report lists it as unjudged.
+- A run with an `instrumentation_error` (the harness started, then the run failed) is not
+  graded. `hcbench.grade` writes it as `instrumentation_error`, resolved 0, even when nothing
+  else can be graded. It does so on the SWE-bench Lite path too, so an older campaign's plain
+  report counts such runs as unresolved after a re-grade. A run whose request log can't be read
+  is an infrastructure error and is re-run with `--retry-errors`.
 
 Suite A results are reported as possibly contaminated (see **Suite A rules** above).
 **Report.** `make report CAMPAIGN=c1-a` (with `HC_PREREG` pointing at `prereg/c1-a`) writes
@@ -238,13 +243,16 @@ tasks. H1 (pass@1) and H2 (tokens and wall seconds per task) are pre-registered 
 contrasts of the analysis plan: `hone-inject` against `pi` and `hermes` (Holm over these), then
 `hone-inject − hone-noinject` and `pi − hermes`, marked "outside the family". H2 gives the
 Holm-adjusted p. Each contrast shows the tasks used and the tasks left out, because one arm has
-no judged run for them.
+no judged run for them. The `family` column of H1 and H2 says whether a row is in the Holm family
+or outside it.
 
 The report lists the `grader_infra_final` runs as unjudged, the `ambiguous_repeated` runs, and
 the runs with an `instrumentation_error` per arm (they count as unresolved and are not graded).
-It exits with the conformance code if a run is still waiting for a re-grade, or if the tasks,
-images or repeats differ from the stage-`a` file. While re-grades are pending, the H1 and H2
-headings say "not final" and no claim lines are written.
+It exits with the conformance code if a run the stage-`a` file expects (every arm in
+`HC_ARMS_MAIN`, every task, every repeat) is missing or has an infrastructure error, if a run is
+still waiting for a grade, or if the tasks, images, arms or repeats differ from the file. While
+runs are missing, waiting for a re-run or waiting for grading, the H1 and H2 headings say "not
+final" with the counts, no claim lines are written, and the family rows read "not final".
 
 ## Day-to-day
 

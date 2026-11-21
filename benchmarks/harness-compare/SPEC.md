@@ -633,7 +633,7 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     non-stage-`a` `preregistration.toml` with its own message.
   - *Gaps (K133).* The preflight and the final check compare the `HC_A_*` rule values unstripped.
 
-- **Round 16 and 16b (K110-K113, K141-K149).**
+- **Round 16 to 16c (K110-K113, K141-K157).**
   - *When (K148).* The stage-`a` report applies only when the pre-registration has `stage = "a"`
     and a `[rules_check]` table. An older SWE-bench Lite stage-`a` file gets the plain report
     ("Suite A", "### Pairwise", no stage-`a` conformance checks).
@@ -645,20 +645,35 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     `pi − hermes`, marked "outside the family", with no Holm decision (K144). No other pair
     appears. H1 columns: `p (paired bootstrap)`, `Holm`, `tasks used`, `tasks left out`
     (no `tasks`); H2 columns: `p` and `p (Holm-adjusted)` (the step-down adjusted p), `claimed`,
-    `tasks used`, `tasks left out` (K146). A task with no judged run for an arm is left out of
+    `tasks used`, `tasks left out` (K146); both end with a `family` column ("Holm family" or
+    "outside the family"). A task with no judged run for an arm is left out of
     its contrasts. The suite A table adds `tokens per resolved run` ("all judged runs' tokens ÷
     resolved runs"). Claim lines say "no detectable difference at n=<tasks run>".
   - *Broken runs (K145).* A suite A run with an `instrumentation_error` gets status
     `instrumentation_error`, resolved 0, in `grading/outcomes.csv` (`grade.collect_instrumented`)
     and is not graded. It counts as unresolved in H1, keeps its tokens and wall seconds in H2,
     is listed per arm, and is not a conformance mismatch. `ANALYSIS_PLAN_A` states the rule.
-  - *Not final (K147).* While runs are pending a re-grade, the H1 and H2 headings say "not
-    final: N runs pending re-grade" and no claim lines are written. `grader_infra_final` runs
-    don't make the report not final; they and `ambiguous_repeated` runs are listed.
+    `hcbench.grade` writes these rows even when no run can be graded, and on the SWE-bench Lite
+    path too, so an older campaign's plain report counts such runs as unresolved after a
+    re-grade. A row fits only its kind of run (K150): an `instrumentation_error` row fits a run
+    with that error and no `infra_error`, any other row a run without one; otherwise the run is
+    `stale`.
+  - *Lost request log (K151).* When the proxy's records can't be read after a run, the run gets
+    `infra_error` ("records: ..."), beside any `instrumentation_error`, for every suite. It is
+    re-run by `--retry-errors` and never graded.
+  - *Not final (K147, K153).* A stage-`a` report is not final while an expected run is missing,
+    has an `infra_error`, or is pending grading. The H1 and H2 headings say "not final: N runs
+    missing, N runs pending re-run, N runs pending grading" (non-zero parts only), no claim
+    lines are written, and the family rows' `Holm` and `claimed` cells read "not final".
+    `grader_infra_final` runs don't make the report not final; they and `ambiguous_repeated`
+    runs are listed.
   - *Conformance (K113, K142).* Stage-`a` mismatches are dicts `{run_id, field, expected,
     found}`: `task_digest` (the campaign's suite A tasks against `run_digest`, else `digest`; the
     header's digest line uses the same), `image`, `repeats.<arm>` and `grade_status` (`ungraded`,
-    `stale`, `grader_infra`, `ambiguous`, `missing`).
+    `stale`, `grader_infra`, `ambiguous`, `missing`; not on a run with an `infra_error`). K152 adds
+    `run` (an expected run, from `HC_ARMS_MAIN`, `[task_images]` and `HC_A_REPEATS`, with no
+    `run.json` or with an `infra_error`), `arm` (a suite A arm not in `HC_ARMS_MAIN`) and
+    `expected_runs` (a file that records no arms, repeats or task images).
   - *Apply failure (K143).* In fork mode `apply_failed` needs a `run_instance.log` line that
     begins with the K138 prefix followed by ` - INFO - >>>>> Patch Apply Failed`. The Lite path
     is unchanged.

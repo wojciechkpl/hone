@@ -304,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     groups = collect(args.campaign)
-    if not groups:
+    if not groups and not collect_instrumented(args.campaign):  # K154
         raise SystemExit(f"no finished suite-a runs under {args.campaign}/a")
     gdir = args.campaign / "grading"
     fork = bool(args.image_digests)

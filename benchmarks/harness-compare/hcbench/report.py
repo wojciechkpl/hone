@@ -48,7 +48,8 @@ PAIRS = [
 
 
 # Suite-A primary family (Holm-corrected together); other pairs are descriptive.
-PRIMARY_FAMILY = {("hone-inject", "pi"), ("hone-inject", "hermes")}
+STAGE_A_FAMILY = (("hone-inject", "pi"), ("hone-inject", "hermes"))
+PRIMARY_FAMILY = set(STAGE_A_FAMILY)
 
 
 def holm(pvalues: Mapping[str, float], alpha: float = 0.05) -> dict[str, bool]:
@@ -86,6 +87,14 @@ def load_outcomes(campaign: Path) -> dict[str, dict]:
         return {r["run_id"]: r for r in csv.DictReader(fh)}
 
 
+def _row_fits_run(status: str, run: Mapping) -> bool:
+    """K150: an instrumentation_error row fits a run with that error and no infra_error; any
+    other row fits a run with no instrumentation_error."""
+    if status == "instrumentation_error":
+        return bool(run.get("instrumentation_error") and not run.get("infra_error"))
+    return not run.get("instrumentation_error")
+
+
 def apply_outcomes(runs: list[dict], outcomes: Mapping[str, Mapping]) -> None:
     for run in runs:
         if run["suite"] != "a":
@@ -94,6 +103,10 @@ def apply_outcomes(runs: list[dict], outcomes: Mapping[str, Mapping]) -> None:
         if o is None:
             run["resolved"] = None
             run["grade_status"] = "ungraded"
+        elif not _row_fits_run(o["status"], run):
+            # K150: the row was graded for a different kind of run (re-run or broken since).
+            run["resolved"] = None
+            run["grade_status"] = "stale"
         elif o.get("patch_sha256") and o["patch_sha256"] != run.get("patch_sha256"):
             # The run was re-executed after grading; its old grade belongs to another patch.
             run["resolved"] = None
@@ -503,7 +516,18 @@ def _arms_mismatches(
 
 PENDING_GRADES = ("ungraded", "stale", "grader_infra", "ambiguous", "missing")
 H2_METRICS = (("total_tokens", "total tokens"), ("wall_s", "wall seconds"))
-H2_CONTRASTS = (("hone-inject", "pi"), ("hone-inject", "hermes"))
+
+
+def _stage_a_expected(prereg: Mapping) -> tuple[list[str], list[str], list[int]]:
+    """K152: the arms, tasks and repeats of the runs a stage-a file expects."""
+    config = prereg.get("config") or {}
+    arms = [a.strip() for a in str(config.get("HC_ARMS_MAIN") or "").split(",") if a.strip()]
+    repeats = sorted(int(x) for x in str(config.get("HC_A_REPEATS", "")).split(",") if x)
+    return arms, sorted(prereg.get("task_images") or {}), repeats
+
+
+def _expected_run_keys(arms: list[str], tasks: list[str], repeats: list[int]):
+    return [(a, t, r) for a in arms for t in tasks for r in repeats]
 
 
 def _stage_a_mismatches(runs: list[dict], prereg: Mapping) -> list[dict]:
@@ -526,9 +550,7 @@ def _stage_a_mismatches(runs: list[dict], prereg: Mapping) -> list[dict]:
                     "found": r.get("image"),
                 }
             )
-    want = sorted(
-        int(x) for x in str((prereg.get("config") or {}).get("HC_A_REPEATS", "")).split(",") if x
-    )
+    arms, expected_tasks, want = _stage_a_expected(prereg)
     by_arm: dict[str, set] = defaultdict(set)
     for r in a_runs:
         by_arm[r["arm"]].add(r["repeat"])
@@ -542,8 +564,34 @@ def _stage_a_mismatches(runs: list[dict], prereg: Mapping) -> list[dict]:
                     "found": sorted(by_arm[arm]),
                 }
             )
+    if not (arms and want and expected_tasks):  # K152
+        out.append(
+            {
+                "run_id": None,
+                "field": "expected_runs",
+                "expected": "arms (HC_ARMS_MAIN), repeats (HC_A_REPEATS) and task images",
+                "found": f"{len(arms)} arms, {len(want)} repeats, {len(expected_tasks)} tasks",
+            }
+        )
+    have = {(r["arm"], r["task_id"], r["repeat"]): r for r in a_runs}
+    for arm, task, repeat in _expected_run_keys(arms, expected_tasks, want):
+        r = have.get((arm, task, repeat))
+        if r is None or r.get("infra_error"):
+            out.append(
+                {
+                    "run_id": r["run_id"] if r else None,
+                    "field": "run",
+                    "expected": f"`{arm}` `{task}` repeat `{repeat}`",
+                    "found": "infrastructure error, not re-run" if r else "no run",
+                }
+            )
+    for arm in sorted(by_arm):
+        if arms and arm not in arms:
+            out.append(
+                {"run_id": None, "field": "arm", "expected": "an arm in HC_ARMS_MAIN", "found": arm}
+            )
     for r in a_runs:
-        if r.get("grade_status") in PENDING_GRADES:
+        if r.get("grade_status") in PENDING_GRADES and not r.get("infra_error"):
             out.append(
                 {
                     "run_id": r["run_id"],
@@ -803,7 +851,6 @@ def _tokens_per_resolved(mine: list[dict]) -> str:
     return f"{tokens / resolved:.0f}" if resolved else "–"
 
 
-STAGE_A_FAMILY = (("hone-inject", "pi"), ("hone-inject", "hermes"))
 STAGE_A_OUTSIDE = (("hone-inject", "hone-noinject"), ("pi", "hermes"))
 OUTSIDE = "outside the family"
 FAMILY_NOTE = "Holm family"
@@ -813,7 +860,7 @@ def pairwise_table(rows: list[dict], suite: str, n_run: int | None = None, pendi
     """With ``n_run`` (the tasks run; stage a, K111, K141, K144, K146) the table holds exactly
     the K101 contrasts: the Holm family, then the two outside it (no Holm decision). It adds
     ``p (paired bootstrap)``, tasks used and left out, and a claim line per family contrast,
-    unless ``pending`` re-grades make the report not final (K147)."""
+    unless ``pending`` (unfinished runs, K153) makes the report not final."""
     rows = [r for r in rows if r["suite"] == suite and r["resolved"] is not None]
     arms = {r["arm"] for r in rows}
     lines = []
@@ -842,6 +889,8 @@ def pairwise_table(rows: list[dict], suite: str, n_run: int | None = None, pendi
         b01, b10 = discordant(ra, rb)
         label = f"{a} − {b}"
         holm_cell = ("yes" if claim[label] else "no") if label in claim else "-"
+        if pending and label in claim:
+            holm_cell = "not final"
         excl = "yes" if pb["lo"] > 0 or pb["hi"] < 0 else "no"
         if n_run is None:
             lines.append(
@@ -932,6 +981,7 @@ def h2_table(rows: list[dict], n_run: int, pending: int = 0) -> str:
         if family:
             claimed = adjusted[key] <= 0.05
             adj, yes, note = f"{adjusted[key]:.4f}", "yes" if claimed else "no", FAMILY_NOTE
+            yes = "not final" if pending else yes
             if not pending:
                 notes.append(
                     f"- {c}, {m}: difference claimed (Holm-adjusted p <= 0.05)."
@@ -1027,8 +1077,24 @@ def _stage_a_markdown(rows: list[dict], runs: list[dict], title: str, prereg: Ma
             f"Tasks created {dates[0]} to {dates[-1]}. Qwen3.8 was released in August 2026, so "
             "the model may have seen these tasks or their fixes.\n\n"
         )
-    pending = sum(1 for r in runs if r["suite"] == "a" and r.get("grade_status") in PENDING_GRADES)
-    final = f" — not final: {pending} runs pending re-grade" if pending else ""
+    arms, expected_tasks, repeats = _stage_a_expected(prereg)
+    a_runs = {(r["arm"], r["task_id"], r["repeat"]): r for r in runs if r["suite"] == "a"}
+    keys = _expected_run_keys(arms, expected_tasks, repeats)
+    counts = (  # K153: each run counts once, in the first of these it fits
+        ("missing", sum(k not in a_runs for k in keys)),
+        ("pending re-run", sum(1 for k in keys if (a_runs.get(k) or {}).get("infra_error"))),
+        (
+            "pending grading",
+            sum(
+                1
+                for r in a_runs.values()
+                if not r.get("infra_error") and r.get("grade_status") in PENDING_GRADES
+            ),
+        ),
+    )
+    parts = [f"{n} run{'s' if n != 1 else ''} {what}" for what, n in counts if n]
+    pending = len(parts)
+    final = f" — not final: {', '.join(parts)}" if parts else ""
     table, _ = suite_table(rows, "a", per_resolved=True)
     out += f"{table}\n_Tokens per resolved run: all judged runs' tokens ÷ resolved runs._\n\n"
     out += f"### H1 — pass@1 (pre-registered){final}\n\n"
@@ -1154,6 +1220,7 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
                 "task_id": r.get("task_id"),
                 "image": r.get("image"),
                 "grade_status": r.get("grade_status"),
+                "infra_error": r.get("infra_error"),
             }
             for r in runs
         ],
