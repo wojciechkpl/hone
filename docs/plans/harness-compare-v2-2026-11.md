@@ -1949,6 +1949,40 @@ These land before the stage-`a` tag for the same reason as round 16b.
   - a run with both an `infra_error` and an `instrumentation_error` gets no row in
     `outcomes.csv`.
 
+#### Round 16d: from the review of round 16c (K158–K162)
+
+The review of round 16c approved it and left five points in report and runner code. Code
+can't change after the stage-`a` tag, so they land now.
+
+- **K158 The analysis holds only the pre-registered runs.** Under a stage-`a`
+  pre-registration:
+  - the suite A table, H1, H2 and the claim line's n use only the expected runs (K152): an
+    arm in `HC_ARMS_MAIN`, a task in `[task_images]`, a repeat in `HC_A_REPEATS`;
+  - any other suite A run (an extra repeat, an extra task, an extra arm) is left out. It
+    stays a conformance mismatch, and a line under the suite A table says "N runs outside
+    the pre-registration are left out." ("1 run … is left out.");
+  - the K153 counts cover expected runs only, so a run outside the set never makes the
+    report not final;
+  - `ANALYSIS_PLAN_A`'s exclusions text adds: "A run of an arm, task or repeat that this
+    file does not list is not analysed and is reported as a mismatch."
+- **K159 One way to find a run's repeat.** The K153 counts, the K158 filter and the K152
+  check read a run's repeat through the same helper (`_repeat_of`). A `run.json` with no
+  `repeat` key doesn't crash the report.
+- **K160 A run with an infrastructure error keeps no grade.** In `report.apply_outcomes`, a
+  run with an `infra_error` never takes a row from `outcomes.csv`: with a row it is
+  `stale`, without one `ungraded`, and `resolved` is blank either way. It stays out of H1
+  and H2 until it is re-run. K152 still gives it one `run` mismatch and no `grade_status`
+  mismatch.
+- **K161 Nothing expected is not final.** When the stage-`a` file records no arms, no
+  repeats or no task images (K152's `expected_runs` mismatch), the H1 and H2 headings say
+  "not final: no expected runs recorded" and no claim lines are written.
+- **K162 Suite C stays fail-closed.** K151 applies to runs with no red-team scenario
+  (suites A and B and the smoke suite). For a suite C run, a request log that can't be read
+  after the harness started stays an `instrumentation_error`: the outcome is unknown, the
+  suite C analysis counts it against the arm, and the run's evidence is kept. Re-running it
+  would delete that evidence. Before the harness starts it is an `infra_error`, as before.
+  This replaces "every suite" in K151.
+
 **Not checked off the GPU box.** The image check, the runs and the fork's grading need
 Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
 the image check, then one task on one arm, then grades it, then a `make report` dry run.
