@@ -232,7 +232,14 @@ apply failure stays an apply failure, and an error with no block stays `error`.
   `resolved` stays blank (left out of pass@1), and the report lists it as unjudged.
 
 Suite A results are reported as possibly contaminated (see **Suite A rules** above).
-The stage-`a` report follows in a later change.
+**Report.** `make report CAMPAIGN=c1-a` (with `HC_PREREG` pointing at `prereg/c1-a`) writes
+the suite A section under the heading "possibly contaminated", with the creation dates of the
+tasks, the pre-registered H1 table (pass@1 per contrast) and H2 table (tokens and wall seconds
+per task, Holm across the four tests). Each contrast shows the tasks used and the tasks left
+out, because one arm has no judged run for them. The report lists the `grader_infra_final` runs
+as unjudged and the `ambiguous_repeated` runs. It exits with the conformance code if a run
+is still waiting for a re-grade, or if the tasks, images or repeats differ from the stage-`a`
+file.
 
 ## Day-to-day
 

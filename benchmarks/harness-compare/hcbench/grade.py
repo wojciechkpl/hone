@@ -109,17 +109,26 @@ def read_report(report_dir: Path) -> dict | None:
     return None
 
 
-def _apply_failed(rdir: Path, swe_run_id: str, iid: str) -> bool:
-    for log in rdir.glob(f"logs/run_evaluation/{swe_run_id}/*/{iid}/*.log"):
+def _apply_failed(rdir: Path, swe_run_id: str, iid: str, fork: bool = False) -> bool:
+    """Lite: the marker anywhere in a log. Fork mode (K143): a ``run_instance.log`` line that
+    begins with the fork's logging prefix and ``INFO - >>>>> Patch Apply Failed``, which is the
+    harness's own line; the same text in the agent's diff or another log doesn't count."""
+    if fork:
+        line = re.compile(rf"^{FORK_LOG_PREFIX} - INFO - {re.escape(APPLY_PATCH_FAIL)}", re.M)
+        logs = rdir.glob(f"logs/run_evaluation/{swe_run_id}/*/{iid}/run_instance.log")
+    else:
+        logs = rdir.glob(f"logs/run_evaluation/{swe_run_id}/*/{iid}/*.log")
+    for log in logs:
         try:
-            if APPLY_PATCH_FAIL in log.read_text(errors="replace"):
-                return True
+            text = log.read_text(errors="replace")
         except OSError:
             continue
+        if (line.search(text) is not None) if fork else (APPLY_PATCH_FAIL in text):
+            return True
     return False
 
 
-def status_for(iid: str, report: dict, rdir: Path, swe_run_id: str) -> str:
+def status_for(iid: str, report: dict, rdir: Path, swe_run_id: str, fork: bool = False) -> str:
     def has(key: str) -> bool:
         return iid in set(report.get(key) or [])
 
@@ -136,7 +145,7 @@ def status_for(iid: str, report: dict, rdir: Path, swe_run_id: str) -> str:
     if has("error_ids"):
         # Patch-caused failures (does not apply, tests error or time out) are deterministic
         # and count as unresolved; retrying cannot clear them.
-        return "apply_failed" if _apply_failed(rdir, swe_run_id, iid) else "error"
+        return "apply_failed" if _apply_failed(rdir, swe_run_id, iid, fork) else "error"
     return "missing"
 
 
@@ -195,7 +204,7 @@ def fork_status_for(iid: str, report: dict, rdir: Path, swe_run_id: str) -> str:
     """K129, K134: status_for, then a fork ``error`` is told apart from the patch's failure by
     the harness's error block. ``unresolved`` ran its tests and stays; an apply failure (found
     by status_for) keeps precedence; the first signature that matches decides the tier."""
-    status = status_for(iid, report, rdir, swe_run_id)
+    status = status_for(iid, report, rdir, swe_run_id, fork=True)
     if status != "error":
         return status
     text = _error_block(rdir, swe_run_id, iid)
