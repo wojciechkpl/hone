@@ -128,18 +128,26 @@ NUMERIC_KEYS = [
 INT_KEYS = ["HC_SEED_BASE", "HC_SELECTION_SEED", "HC_A_N"]
 
 SUITE_A_TEXT = {
-    "stratify": "Draw n repositories with "
+    "eligible": "A task is eligible when its split is named YYYY_MM (four digits, an underscore, "
+    "a month from 01 to 12), the split name is min_split or later compared as text, and the date "
+    "of its created_at is min_created or later. Other splits, such as test, are ignored. A task "
+    "with no creation date is not eligible. Splits published before stage a is pre-registered "
+    "count, and stage a records the dataset revision.",
+    "stratify": "Here seed is selection_seed, repos is the distinct values of the eligible tasks' "
+    "repo field, and ids is one repository's instance_id values. Draw n repositories with "
     'random.Random(f"{seed}:repos").sample(sorted(repos), n), '
-    "then one task from each with "
+    "then one task from each repo with "
     'random.Random(f"{seed}:{repo}").sample(sorted(ids), 1). '
-    "If fewer than n repositories are eligible, use the largest-remainder rule with at least one "
-    "task per repository.",
-    "contamination": "Every eligible task was created before Qwen3.8 was released in August 2026, "
-    "so the model may have seen these tasks or their fixes in training; suite A results are "
-    "reported as possibly contaminated, and every arm runs the same model, so the harness "
-    "contrasts compare harnesses under the same exposure.",
-    "if_fewer": "If fewer than n tasks are eligible on pre-registration day, all eligible tasks "
-    "are used.",
+    "If fewer than n repositories are eligible, use hcbench.sampling.stratified_sample at the "
+    "recorded repo.head (largest-remainder rule, at least one task per repository). "
+    "The code of the whole rule is hcbench.sampling.select_suite_a.",
+    "contamination": "Every task eligible on 2026-11-20 was created before Qwen3.8 was released in "
+    "August 2026, so the model may have seen these tasks or their fixes in training. A later "
+    "split may add tasks created after that release, and stage a records each task's creation "
+    "date. Suite A results are reported as possibly contaminated. Every arm runs the same model, "
+    "so the harness contrasts compare harnesses under the same exposure.",
+    "if_fewer": "If n or fewer tasks are eligible on stage a's pre-registration day, all eligible "
+    "tasks are used.",
     "grader_pin": "The grading fork is pinned by commit at stage a, together with each task "
     "image digest.",
 }
