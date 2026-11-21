@@ -1882,6 +1882,73 @@ The report code and `ANALYSIS_PLAN_A` freeze at the stage-`a` tag, so these land
   - the `tokens per resolved run` denominator;
   - the header's digest line uses `run_digest`.
 
+#### Round 16c: from the review of round 16b (K150–K157)
+
+Round 16b turned broken runs into results, so the paths that carry them have to be exact.
+These land before the stage-`a` tag for the same reason as round 16b.
+
+- **K150 A grade must match its run.** In `report.apply_outcomes`:
+  - an `outcomes.csv` row with status `instrumentation_error` fits only a run that has an
+    `instrumentation_error` and no `infra_error`;
+  - any other row fits only a run with no `instrumentation_error`;
+  - when the row and the run disagree, the run is `stale` (blank `resolved`), so it is a
+    K142 mismatch and the report is not final.
+
+  Example: a broken run is graded, re-run with `--force` and reported before a re-grade.
+  Its row has no `patch_sha256`, so the existing stale check never fired.
+- **K151 A lost request log is an infrastructure error.**
+  - In `runner.execute_run`, when the proxy's records can't be read after a run, the run
+    gets `infra_error` ("records: …"), also when the harness had started. An
+    `instrumentation_error` set earlier stays beside it.
+  - So `--retry-errors` re-runs it, `grade.collect_instrumented` skips it, and its 0 tokens
+    never reach H1 or H2.
+  - `ANALYSIS_PLAN_A`'s exclusions text adds: "A run whose request log can't be read is an
+    infrastructure error."
+  - H2 never counts a missing value as 0. A run with no wall seconds or no token count is
+    left out of that metric's per-task mean.
+  - This holds for every suite from this commit on. Stage `cb` runs from its own tag.
+- **K152 Every pre-registered run is there.** The expected runs of stage `a` are every arm
+  in `[config] HC_ARMS_MAIN`, for every task in `[task_images]`, at every repeat in
+  `HC_A_REPEATS`. Each of these is a conformance mismatch:
+  - an expected run with no `run.json`: field `run`, expected "`<arm>` `<task>` repeat
+    `<r>`", found "no run";
+  - an expected run with an `infra_error`: field `run`, the same expected text, found
+    "infrastructure error, not re-run", with its run id. It gets no separate `grade_status`
+    mismatch;
+  - a suite A run of an arm that is not in `HC_ARMS_MAIN`: field `arm`;
+  - a stage-`a` file that records no arms, no repeats or no task images, so that nothing is
+    expected: field `expected_runs`.
+
+  The frozen "arms" text promises this, and K142 allows only `grader_infra_final` runs to
+  be absent from the analysis.
+- **K153 Not final covers every unfinished run.** This replaces K147's heading text.
+  - A stage-`a` report is not final when an expected run (K152) is missing, has an
+    `infra_error`, or is pending grading (the K142 statuses, on a run with no
+    `infra_error`). Each run counts once.
+  - The H1 and H2 headings then say "not final: " and the parts that are not zero, in this
+    order, joined by ", ": "N runs missing", "N runs pending re-run", "N runs pending
+    grading". One run is "1 run".
+  - No claim lines are written, and the H1 `Holm` cell and the H2 `claimed` cell of the
+    family rows read "not final".
+- **K154 Broken runs are written even when nothing can be graded.** When no suite A run can
+  be graded but runs with an `instrumentation_error` exist, `hcbench.grade` writes
+  `outcomes.csv` with their rows and exits 0. With neither, it stops as before.
+- **K155 One definition of the family.** `report.H2_CONTRASTS` is unused and goes.
+  `PRIMARY_FAMILY` and `STAGE_A_FAMILY` hold the same pairs from one definition.
+- **K156 Docs.**
+  - README's grading list names the `instrumentation_error` status.
+  - README and SPEC name the `family` column of H1 and H2.
+  - Both say that `hcbench.grade` writes these rows on the SWE-bench Lite path too, so an
+    older campaign's plain report counts such runs as unresolved after a re-grade.
+- **K157 Tests for the mutants that survived:**
+  - H1's Holm at alpha 0.05: a family contrast whose p is above 0.025 and at most 0.05,
+    beside one with a larger p, is not claimed;
+  - the Holm-adjusted p never exceeds 1;
+  - the claim line's n counts a task that has no judged run in any arm;
+  - the list of unjudged and broken runs is sorted by arm;
+  - a run with both an `infra_error` and an `instrumentation_error` gets no row in
+    `outcomes.csv`.
+
 **Not checked off the GPU box.** The image check, the runs and the fork's grading need
 Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
 the image check, then one task on one arm, then grades it, then a `make report` dry run.
