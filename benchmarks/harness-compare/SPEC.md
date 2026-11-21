@@ -509,6 +509,42 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.2.
 - **Stage `a` (K15).** Unchanged apart from `stage = "a"`, the K13 title and the extra
   `[config]` keys.
 
+### Stage a: SWE-rebench loader (K93-K104)
+
+Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
+
+- **`hcbench.rebench`, pure functions.** `split_eligible(name, min_split)` (full match of
+  `[0-9]{4}_(0[1-9]|1[0-2])` and `name >= min_split` as text), `created_date(value)` (the first
+  ten characters as an ISO date, else `None`), `eligible_rows(rows_by_split, min_split,
+  min_created)` (rows of eligible splits with a creation date on or after `min_created`;
+  `instance_id` and `repo` as text, a `split` field, sorted by id) and `choose_tasks(rows, n,
+  seed)`, which is `hcbench.sampling.select_suite_a` (next to `allocate` and
+  `stratified_sample`).
+- **Seams.** `resolve_revision(dataset, revision) -> str | None` (the commit SHA, `None` when it
+  can't be resolved), `list_splits(dataset, sha)`, `load_split(dataset, split, sha)` and
+  `run_command(argv)`. Tests replace them; nothing in the tests uses the network or Docker.
+- **`select`** resolves the revision first and stops if it can't (no unpinned load), loads each
+  eligible split at the SHA, and refuses: no eligible task, an `instance_id` in two eligible
+  splits, an eligible row with no image, or `image_name` and `docker_image` that differ. It
+  writes `tasks.txt`, `instances.jsonl`, `dataset.json` and `selection.json` (`dataset`,
+  `revision`, `resolved_revision`, `splits`, `min_split`, `min_created`, `n`, `seed`, `method`,
+  `eligible_count`, `eligible_repos`, `eligible_digest`, `digest`, `python_version`,
+  `python_implementation`, `grader`, `created_at`).
+- **`check-images --dir DIR`** runs each pinned image in `images.digests` once with `docker run
+  --rm --network none --entrypoint bash <ref> -c <script>` (`REBENCH_PATH` in `hcbench.suites`).
+  A task passes when HEAD is its `base_commit`, `git status --porcelain` is empty and Python
+  runs. It writes `images.check.json`, rewrites `tasks.txt` without the failures, and adds
+  `excluded` (id to reason) and `run_digest` to `selection.json`; `digest` keeps the drawn
+  list.
+- **Stage `a` file (K97, K98).** `--rules` (the stage-`cb` file) is required; `--accept-diff KEY`
+  repeats. Besides the usual tables it has `[rules_check]` (`path`, `sha256`, `repo_head`,
+  `accepted`), `[tasks]` (the `selection.json` keys except `created_at` and `excluded`, plus
+  `run_digest`), `[task_created_at]`, `[task_images]`, `[excluded_tasks]`, `[grader]` (`repo`,
+  `commit` from `HC_A_GRADER_REF`, `namespace` from `HC_A_NAMESPACE`) and `[analysis]` from
+  `ANALYSIS_PLAN_A`. `files_sha256` adds `prompt_swebench`, `tasks_txt`, `instances_jsonl`,
+  `dataset_json`, `selection_json`, `images_digests` and `images_check_json`. Stage `cb` is
+  unchanged.
+
 ### Campaign 1, round 2 (K18-K29)
 
 Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.

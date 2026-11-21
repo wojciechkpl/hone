@@ -5,8 +5,12 @@
 # Usage: scripts/05_preregister.sh <name>        e.g. 2026-11
 #        scripts/05_preregister.sh <name> --draft (allow CHANGE-ME placeholders)
 #        scripts/05_preregister.sh <name> --stage cb [--draft]   (also --stage=cb, --stage a)
+#        scripts/05_preregister.sh <name> --stage a --rules prereg/<cb name>/preregistration.toml
 #   Stage cb (campaign 1: suites C and B) has no task list: it skips task selection and
 #   image pulls and records the suite A rules; DEVIATIONS.md is still written.
+#   Stage a (suite A on SWE-rebench) needs --rules (the stage cb file). It selects the tasks,
+#   pulls and pins their images, checks each image, then writes the pre-registration. Further
+#   arguments (--draft, --accept-diff KEY) go to hcbench.prereg. HC_SKIP_PULL=1 needs --draft.
 source "$(dirname "$0")/lib.sh"
 load_env
 name="${1:?usage: $0 <name> [--draft]}"; shift || true
@@ -15,11 +19,15 @@ dir="${HC_ROOT}/prereg/${name}"
 # --stage cb | --stage=cb | --stage a | --stage=a; anything else stops before any file is made.
 stage=a
 expect=0
+draft=0
+rules=0
 for arg in "$@"; do
   if (( expect )); then stage="${arg}"; expect=0; continue; fi
   case "${arg}" in
   --stage) expect=1 ;;
   --stage=*) stage="${arg#--stage=}" ;;
+  --draft) draft=1 ;;
+  --rules | --rules=*) rules=1 ;;
   *) ;;
   esac
 done
@@ -28,15 +36,35 @@ case "${stage}" in
 a | cb) ;;
 *) die "unknown --stage '${stage}': use a or cb" ;;
 esac
+if [[ "${stage}" == a ]]; then
+  (( rules )) || die "stage a needs --rules prereg/<cb name>/preregistration.toml (the stage cb file)"
+  [[ "${HC_SKIP_PULL:-0}" != 1 ]] || (( draft )) || die "HC_SKIP_PULL=1 is accepted only with --draft"
+fi
 mkdir -p "${dir}"
 
 if [[ "${stage}" == cb ]]; then
   hc_py hcbench.prereg --out "${dir}/preregistration.toml" "$@"
 else
-  rev=(); [[ -n "${HC_SWE_DATASET_REVISION:-}" ]] && rev=(--revision "${HC_SWE_DATASET_REVISION}")
-  HC_PY_WITH="--with datasets" hc_py hcbench.select_tasks \
-    --dataset "${HC_SWE_DATASET}" --split "${HC_SWE_SPLIT}" ${rev[@]+"${rev[@]}"} \
-    --n "${HC_SWE_N}" --seed "${HC_SELECTION_SEED}" --out "${dir}"
+  HC_PY_WITH="--with datasets" hc_py hcbench.rebench select \
+    --dataset "${HC_A_DATASET}" --revision "${HC_A_REVISION:-}" \
+    --min-split "${HC_A_MIN_SPLIT}" --min-created "${HC_A_MIN_CREATED}" \
+    --n "${HC_A_N}" --seed "${HC_SELECTION_SEED}" --grader "${HC_A_GRADER}" --out "${dir}"
+  python3 - "${dir}/instances.jsonl" > "${dir}/images.list" << 'PY'
+import json, sys
+for line in open(sys.argv[1]):
+    if line.strip():
+        print(json.loads(line)["image"])
+PY
+  if [[ "${HC_SKIP_PULL:-0}" != 1 ]]; then
+    log "pulling $(wc -l < "${dir}/images.list" | tr -d ' ') SWE-rebench task images (large; HC_SKIP_PULL=1 with --draft skips)"
+    xargs -n1 -P4 docker pull -q < "${dir}/images.list" >/dev/null
+    # Pin what was pulled: tags like :latest can move between pre-registration and grading.
+    while read -r img; do
+      printf '%s %s\n' "${img}" "$(docker image inspect -f '{{index .RepoDigests 0}}' "${img}" 2>/dev/null || echo MISSING)"
+    done < "${dir}/images.list" > "${dir}/images.digests"
+    grep -q MISSING "${dir}/images.digests" && warn "some images failed to pull (see images.digests)"
+    hc_py hcbench.rebench check-images --dir "${dir}"
+  fi
   hc_py hcbench.prereg --selection "${dir}/selection.json" --out "${dir}/preregistration.toml" "$@"
 fi
 
@@ -49,27 +77,6 @@ the runs it affects. An empty list means none.
 | date | change | reason | affected runs |
 |---|---|---|---|
 EOF
-
-if [[ "${stage}" != cb ]]; then
-  python3 - "${dir}/instances.jsonl" "${HC_SWE_NAMESPACE}" > "${dir}/images.list" << 'PY'
-import json, os, sys
-sys.path.insert(0, os.environ["HC_ROOT"])
-from hcbench.suites import swebench_image
-for line in open(sys.argv[1]):
-    if line.strip():
-        inst = json.loads(line)
-        print(inst.get("image") or swebench_image(inst["instance_id"], sys.argv[2]))
-PY
-  if [[ "${HC_SKIP_PULL:-0}" != 1 ]]; then
-    log "pulling ${HC_SWE_N} SWE-bench instance images (large; set HC_SKIP_PULL=1 to skip)"
-    xargs -n1 -P4 docker pull -q < "${dir}/images.list" >/dev/null
-    # Pin what was pulled: tags like :latest can move between pre-registration and grading.
-    while read -r img; do
-      printf '%s %s\n' "${img}" "$(docker image inspect -f '{{index .RepoDigests 0}}' "${img}" 2>/dev/null || echo MISSING)"
-    done < "${dir}/images.list" > "${dir}/images.digests"
-    grep -q MISSING "${dir}/images.digests" && warn "some images failed to pull (see images.digests)"
-  fi
-fi
 
 cat << EOF
 

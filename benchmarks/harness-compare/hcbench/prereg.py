@@ -19,6 +19,7 @@ import os
 import re
 import subprocess
 import time
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,31 @@ ANALYSIS_PLAN_CB = {
     "the doom-loop, context-full, budget and timeout counts.",
 }
 
+# Stage a (suite A on SWE-rebench): docs/plans/harness-compare-v2-2026-11.md section 11.17 K101.
+ANALYSIS_PLAN_A = {
+    "h1": f"H1: pass@1 on suite A, where resolved means resolved by the SWE-rebench grading fork "
+    f"at HC_A_GRADER_REF. One attempt per repeat (0 and 1). Take the per-task mean over repeats, "
+    f"then the mean over tasks. Contrasts: hone-inject {MINUS} pi and hone-inject {MINUS} hermes.",
+    "h2": f"H2: total tokens per task and wall seconds per task, each a per-task mean over "
+    f"repeats. Four tests: hone-inject {MINUS} pi and hone-inject {MINUS} hermes, for total "
+    f"tokens and for wall seconds. Tokens per resolved task is secondary and descriptive.",
+    "families": "Holm correction at alpha 0.05 within each family: the two H1 contrasts form one "
+    "family and the four H2 tests form another.",
+    "outside_families": f"hone-inject {MINUS} hone-noinject and pi {MINUS} hermes are reported "
+    "outside the families.",
+    "tests": "95% paired bootstrap over tasks (10,000 resamples, seed 0). The p-value comes from "
+    "the paired bootstrap, plus an exact McNemar test on repeat 0 for H1.",
+    "claim_rule": "A difference is claimed only when its corrected test rejects at 0.05. "
+    "Otherwise the report says no detectable difference at n=<tasks run>, with the confidence "
+    "interval.",
+    "exclusions": "A task whose image fails the image check is excluded before any run, listed, "
+    "and not replaced. Runs with infrastructure errors are re-run, and grader infrastructure "
+    "errors are re-graded. Nothing else is excluded.",
+    "contamination": "Suite A results are labelled possibly contaminated (see suite_a_rules in "
+    "the stage cb pre-registration).",
+    "arms": "Every arm in HC_ARMS_MAIN runs every task at the repeats in HC_A_REPEATS.",
+}
+
 CUT_ORDER = [
     "suite G repeats 2 -> 1",
     "suite D repeats 2 -> 1",
@@ -113,6 +139,16 @@ ENV_KEYS = [
     "HC_A_MIN_CREATED", "HC_ARMS_B", "HC_CONCURRENCY", "HC_PIDS_LIMIT", "HC_MINI_IMAGE",
     "HC_REDTEAM_IMAGE", "HC_TOOLS_IMAGE", "HC_SELECTION_SEED",
 ]  # fmt: skip
+
+# Stage a also records these (K99); stage cb's recorded config does not change.
+A_ENV_KEYS = ["HC_A_REVISION", "HC_A_GRADER_REF", "HC_A_NAMESPACE"]
+GRADER_REF = re.compile(r"[0-9a-f]{40}")
+# What a stage-a selection repeats from the stage-cb [suite_a_rules]: (selection key, rules key).
+RULE_FIELDS = [
+    ("dataset", "dataset"), ("min_split", "min_split"), ("min_created", "min_created"),
+    ("n", "n"), ("seed", "selection_seed"), ("grader", "grader"),
+]  # fmt: skip
+DIGEST_LINE = re.compile(r"\S+ \S+@sha256:[0-9a-f]{64}")
 
 # Stage cb refuses these when unset or empty (spec 11.4 K20); the first group is also checked
 # by the scripts that start the model server and the proxy.
@@ -458,6 +494,103 @@ def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
         )
 
 
+def check_rules(selection: dict[str, Any], cb: dict[str, Any]) -> None:
+    """K97: the selection repeats the stage-cb suite A rules. Nothing overrides this."""
+    rules = cb.get("suite_a_rules", {})
+    for sel_key, rule_key in RULE_FIELDS:
+        if selection.get(sel_key) != rules.get(rule_key):
+            raise SystemExit(
+                f"selection.json {sel_key} {selection.get(sel_key)!r} differs from the stage cb "
+                f"suite_a_rules {rule_key} {rules.get(rule_key)!r}"
+            )
+
+
+def read_rules(path: Path) -> tuple[dict[str, Any], str]:
+    """The stage-cb file (K97): refuse a missing, non-cb or draft file."""
+    try:
+        raw = path.read_bytes()
+        cb = tomllib.loads(raw.decode())
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise SystemExit(f"cannot read the --rules file {path}: {exc}") from exc
+    if cb.get("stage") != "cb":
+        raise SystemExit(f"--rules {path} is stage {cb.get('stage')!r}, not the stage cb file")
+    if cb.get("draft"):
+        raise SystemExit(f"--rules {path} is a draft; stage a needs the tagged stage cb file")
+    return cb, hashlib.sha256(raw).hexdigest()
+
+
+def diff_against_cb(
+    cb: dict[str, Any], env: dict[str, str], bundle: dict[str, Any], accepted_keys: list[str]
+) -> list[str]:
+    """K97: config keys and the bundle that differ from the stage-cb file. Refuses a difference
+    that --accept-diff does not name; returns the accepted ones, with both values."""
+    diffs = {
+        k: (v, env.get(k)) for k, v in cb.get("config", {}).items() if str(env.get(k, "")) != str(v)
+    }
+    if cb.get("bundle", {}) != bundle:
+        diffs["bundle"] = (cb.get("bundle", {}), bundle)
+    refused = [k for k in diffs if k not in accepted_keys]
+    if refused:
+        raise SystemExit(
+            "stage a differs from the stage cb file in: "
+            + ", ".join(refused)
+            + "; fix it or accept it with --accept-diff KEY (and log it in DEVIATIONS.md)"
+        )
+    show = lambda v: json.dumps(v, sort_keys=True) if isinstance(v, dict) else str(v)  # noqa: E731
+    return [f"{k}: stage cb {show(a)}, stage a {show(b)}" for k, (a, b) in diffs.items()]
+
+
+def validate_stage_a(env: dict[str, str]) -> None:
+    """K99: a non-draft stage a needs a 40-hex grader commit and a namespace."""
+    if not GRADER_REF.fullmatch(env["HC_A_GRADER_REF"]):
+        raise SystemExit(
+            "HC_A_GRADER_REF must be 40 lowercase hexadecimal characters, "
+            f"got {env['HC_A_GRADER_REF']!r}"
+        )
+    if not env["HC_A_NAMESPACE"].strip():
+        raise SystemExit("HC_A_NAMESPACE must not be empty")
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+
+
+def stage_a_tables(sel_dir: Path, selection: dict[str, Any], draft: bool) -> dict[str, Any]:
+    """K98, K103: [tasks], [task_created_at], [task_images], [excluded_tasks]."""
+    tasks = {k: v for k, v in selection.items() if k not in ("created_at", "excluded")}
+    ids = [ln for ln in (sel_dir / "tasks.txt").read_text().splitlines() if ln.strip()]
+    recs = {r["instance_id"]: r for r in read_jsonl(sel_dir / "instances.jsonl")}
+    pinned: dict[str, str] = {}
+    problems = []
+    digests = sel_dir / "images.digests"
+    if digests.exists():
+        for line in digests.read_text().splitlines():
+            if not line.strip():
+                continue
+            if DIGEST_LINE.fullmatch(line):
+                image, ref = line.split()
+                pinned[image] = ref
+            else:
+                problems.append(line.split()[0] if line.split() else line)
+    else:
+        problems.append("images.digests is missing")
+    task_images = {i: pinned[recs[i]["image"]] for i in ids if recs[i]["image"] in pinned}
+    for i in ids:
+        if i not in task_images and recs[i]["image"] not in problems:
+            problems.append(recs[i]["image"])
+    if problems and not draft:
+        raise SystemExit(
+            "images.digests has no pinned digest (<image> <name>@sha256:<64 hex>) for:\n  "
+            + "\n  ".join(problems)
+        )
+    return {
+        "tasks": tasks,
+        "task_created_at": {i: str(recs[i]["created_at"]) for i in ids},
+        "task_images": task_images,
+        "excluded_tasks": dict(selection.get("excluded") or {}),
+    }
+
+
 def _num(text: str) -> int | float:
     """Parse a numeric config value the way the proxy override does (JSON)."""
     return json.loads(text)
@@ -482,15 +615,24 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--stage", choices=["cb", "a"], default="a", help="default: a")
     ap.add_argument("--selection", type=Path, help="stage a: selection.json (required)")
+    ap.add_argument("--rules", type=Path, help="stage a: the stage cb preregistration.toml")
+    ap.add_argument(
+        "--accept-diff", action="append", default=[], metavar="KEY",
+        help="stage a: let a named difference from the stage cb file through (repeatable)",
+    )  # fmt: skip
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--draft", action="store_true", help="allow CHANGE-ME placeholders")
     ap.add_argument("--env-file", type=Path)
     args = ap.parse_args(argv)
     if args.stage == "a" and args.selection is None:
         ap.error("--selection is required for stage a")
+    if args.stage == "a" and args.rules is None:
+        ap.error("--rules is required for stage a")
     ensure_env(args.env_file)
 
     env = {k: os.environ.get(k, "") for k in ENV_KEYS}
+    if args.stage == "a":
+        env.update({k: os.environ.get(k, "") for k in A_ENV_KEYS})
     if args.stage == "cb":
         validate_stage_cb(env, draft=args.draft)
     placeholders = [k for k, v in env.items() if "CHANGE-ME" in v]
@@ -538,17 +680,37 @@ def main(argv: list[str] | None = None) -> int:
         }
         data["analysis"] = ANALYSIS_PLAN_CB
     else:
+        sel_dir = args.selection.parent
         selection = json.loads(args.selection.read_text())
         files["prompt_swebench"] = ROOT / "config" / "prompts" / "swebench.md"
-        files["tasks_txt"] = args.selection.parent / "tasks.txt"
-        data["tasks"] = {
-            k: selection.get(k)
-            for k in ("dataset", "split", "revision", "resolved_revision", "n", "seed", "digest")
-        }
-        data["analysis"] = ANALYSIS_PLAN
-    data["files_sha256"] = {k: sha256_file(p) for k, p in files.items() if p.exists()}
+        files.update(
+            {
+                f"{p.replace('.', '_')}": sel_dir / p
+                for p in (
+                    "tasks.txt", "instances.jsonl", "dataset.json", "selection.json",
+                    "images.digests", "images.check.json",
+                )
+            }
+        )  # fmt: skip
+        if not args.draft:
+            validate_stage_a(env)
+        data["analysis"] = ANALYSIS_PLAN_A
     manifest = json.loads(bundle_manifest.read_text()) if bundle_manifest.exists() else {}
     data["bundle"] = {k: v for k, v in manifest.items() if v is not None}  # null: not in TOML
+    if args.stage == "a":
+        cb, cb_sha = read_rules(args.rules)
+        check_rules(selection, cb)
+        accepted = diff_against_cb(cb, env, data["bundle"], args.accept_diff)
+        data["rules_check"] = {
+            "path": str(args.rules), "sha256": cb_sha, "repo_head": cb["repo"]["head"],
+            "accepted": accepted,
+        }  # fmt: skip
+        data.update(stage_a_tables(sel_dir, selection, args.draft or bool(placeholders)))
+        data["grader"] = {
+            "repo": env["HC_A_GRADER"], "commit": env["HC_A_GRADER_REF"],
+            "namespace": env["HC_A_NAMESPACE"],
+        }  # fmt: skip
+    data["files_sha256"] = {k: sha256_file(p) for k, p in files.items() if p.exists()}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         "# Pre-registration. Commit and tag BEFORE any suite A/B/C run.\n"

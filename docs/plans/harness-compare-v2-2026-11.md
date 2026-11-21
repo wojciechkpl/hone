@@ -948,7 +948,7 @@ report. So these report-side fixes land before the pre-registration.
 | npm does not pin Pi's dependency tree (K65) | A rebuild can resolve different dependency versions | The manifest's `pi_lock_sha256` makes a change visible as a bundle mismatch. Don't rebuild the bundle after the tag |
 | The pre-registration checks the Pi and Hermes bundles (K73, K79) but not Hone's: nothing compares the manifest's `hone_sha` with `HC_HONE_REF`, and `--skip-hone` writes `hone_sha: null` | A partial rebuild before the tag records no Hone commit in the bundle | Run a full `make bundle` (no `--skip-*`) before the tag and check `hone_sha` in the runbook's bundle step |
 | `grade.py` names grading groups by seed | Odd names in the published suite A package; results are unaffected | Stage 2 |
-| Stage `a` has no validation and still reads SWE-bench Lite | Stage 2 can't be pre-registered yet | The SWE-rebench loader (§10.6 item 4) |
+| ~~Stage `a` has no validation and still reads SWE-bench Lite~~ Closed in §11.17 (K93–K104): stage `a` selects from SWE-rebench, pins and checks the images, and is checked against the stage-`cb` file | | |
 
 ### 11.10 Requirements, round 7 (pre-tag follow-ups, 2026-11-18)
 

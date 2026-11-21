@@ -18,6 +18,12 @@ SWE_PATH = (
     "/opt/miniconda3/envs/testbed/bin:/opt/miniconda3/bin:"
     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
+# SWE-rebench task images keep conda in /opt/conda, with the testbed env first (spec K105).
+REBENCH_PATH = (
+    "/opt/conda/envs/testbed/bin:/opt/conda/bin:"
+    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
+    "/lib/jvm/java-17-openjdk-amd64/bin"
+)
 MINI_WORKDIR = "/work/repo"
 REDTEAM_WORKDIR = "/work/app"
 

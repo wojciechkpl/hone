@@ -143,6 +143,41 @@ and tool folders (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`,
 `.pytest_cache/`, `.ruff_cache/`, `.claude/`, `uv.lock`), editor swap or backup files,
 `.DS_Store`, and `config/bench.env`: the code check can't see ignored files.
 
+## Campaign 1, stage 2 (suite A on SWE-rebench)
+
+Stage 2 pre-registers the suite A task list under its own name, `c1-a`, from the merged
+code. It needs the stage-`cb` file (`prereg/c1/`) tagged first. Design:
+[`harness-compare-v2`](../../docs/plans/harness-compare-v2-2026-11.md) §11.17.
+
+```bash
+make prereg NAME=c1-a STAGE=a RULES=c1   # RULES= is the stage-cb name under prereg/
+git add prereg/c1-a
+git commit -m "bench: pre-register campaign 1, stage a"
+git tag bench-prereg-c1-a
+git push origin HEAD bench-prereg-c1-a
+```
+
+`scripts/05_preregister.sh` runs, in order: `python -m hcbench.rebench select` (eligible
+splits and dates, then `select_suite_a`; the dataset revision from `HC_A_REVISION`, empty
+meaning the hub's main, is resolved to a commit); the image pulls and their digests
+(`images.digests`); `python -m hcbench.rebench check-images` (each pinned image runs once
+with no network; a task whose HEAD is not the base commit, whose `git status` is not empty or
+whose Python doesn't run is excluded and listed); then `hcbench.prereg --stage a`.
+`HC_SKIP_PULL=1` is accepted only with `--draft`. The images are large (1.4 to 2.1 GB each).
+
+`hcbench.prereg --stage a --rules <stage-cb file>` refuses when the file is missing, not
+stage `cb`, or a draft; when the selection's dataset, `min_split`, `min_created`, `n`, seed
+or grader differ from the stage-`cb` `[suite_a_rules]` (nothing overrides this); and when a
+`[config]` key or the bundle differs from the stage-`cb` file. `--accept-diff KEY` (`bundle`
+for the bundle) lets a named difference through. It is then listed under
+`[rules_check] accepted` with both values, and it must also be logged in
+`prereg/c1/DEVIATIONS.md`. A non-draft file also refuses an `HC_A_GRADER_REF` that isn't 40
+lowercase hex characters, an empty `HC_A_NAMESPACE`, and an `images.digests` line that says
+`MISSING` or isn't `<image> <name>@sha256:<64 hex>`.
+
+Suite A results are reported as possibly contaminated (see **Suite A rules** above).
+The runs and the grading through the SWE-rebench fork follow in later changes.
+
 ## Day-to-day
 
 | Need | Command |
