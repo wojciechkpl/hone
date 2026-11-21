@@ -1350,6 +1350,275 @@ Requirements:
   - update the stage-`a` `ANALYSIS_PLAN`, which still says "official swebench harness"
     and "n=40".
 
+### 11.17 Stage `a`: the SWE-rebench loader (rounds 14–16, 2026-11-20)
+
+This change makes stage 2 possible: it selects suite A by the rules recorded at the
+`bench-prereg-c1` tag, pins what the runs depend on, runs and grades the tasks, and reports
+H1 and H2 (§3).
+
+**When it lands.**
+- It merges only after `bench-prereg-c1` is on GitHub. Suites C and B run from the tagged
+  commit, and their report is made from it (K56).
+- Stage `a` is pre-registered from the merged code under its own name, `c1-a`: the files go
+  in `prereg/c1-a/`, the tag is `bench-prereg-c1-a`, and the campaign is `c1-a`. The
+  stage-`a` file records its own code state, so the suite A runs are checked against it, not
+  against `prereg/c1/`.
+- The stage-`a` file is checked against the stage-`cb` file (K97): the rules, the model, the
+  sampling and the bundle are the ones tagged at `bench-prereg-c1`.
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart TD
+  T1["Tag bench-prereg-c1<br/>(rules, model, sampling)"] --> CB["Run C and B<br/>at the tagged commit"]
+  T1 --> M["Merge this change<br/>(rounds 14–16)"]
+  M --> S["make prereg NAME=c1-a STAGE=a RULES=c1"]
+  S --> S1["Select: eligible splits and dates,<br/>select_suite_a (K93–K96)"]
+  S1 --> S2["Pull images, pin digests,<br/>check each image (K103, K104)"]
+  S2 --> S3["Write prereg/c1-a,<br/>checked against prereg/c1 (K97, K98)"]
+  S3 --> T2["Tag bench-prereg-c1-a"]
+  T2 --> RA["make run-a CAMPAIGN=c1-a<br/>pinned images (K105–K107)"]
+  RA --> G["make grade: SWE-rebench fork<br/>at a pinned commit (K108, K109)"]
+  G --> R2["Report 2: H1, H2,<br/>contamination label (K110–K113)"]
+```
+
+**Facts this rests on (checked 2026-11-20).**
+- **Dataset rows** (`nebius/SWE-rebench-leaderboard` at `34d5a588`, the hub's main that day):
+  - `docker_image` and `image_name` are equal in every row. The name has the form
+    `swerebench/sweb.eval.x86_64.<owner>_1776_<repo>-<number>:latest`.
+  - `FAIL_TO_PASS` and `PASS_TO_PASS` are lists. `install_config` is an object.
+  - `created_at` is text such as `2026-03-22 09:18:02`. `version` is `unknown` in every
+    row.
+  - `interface` is non-empty in 49 rows of `2026_02` and `2026_03`. In 43 of them the text
+    already ends `problem_statement`. In 6 rows `problem_statement` ends with an empty
+    `## Interface` heading, and the text is only in `interface`.
+- **Grading fork** (`SWE-rebench/SWE-bench-fork`):
+  - The newest commit is `e4907b7a90eafaa1f0a6428fd04fe31cdd8b4284` (2026-06-03, README
+    only). It is the newest commit at least two weeks old. The package is `swebench` 4.0.3,
+    for Python 3.10 or newer.
+  - `python -m swebench.harness.run_evaluation` reads a local `.json` list of rows given as
+    `--dataset_name`, and then ignores `--split`. It has no revision flag.
+  - It runs a row's `image_name` as given, pulls it when it's missing and never builds it.
+    `--namespace` must not be empty: an empty value makes it build environment images.
+  - A row's `install_config` replaces upstream's per-repository specs. `test_cmd` gives the
+    test command, `log_parser` the parser, and every row uses `parse_log_pytest`.
+  - A task is resolved when every FAIL_TO_PASS and PASS_TO_PASS test passes.
+  - The report is `<model>.<run_id>.json` in the working directory; `--report_dir` is
+    created but not used. It keeps `resolved_ids`, `unresolved_ids`, `empty_patch_ids`,
+    `error_ids` and `incomplete_ids`.
+  - A patch that doesn't apply logs `>>>>> Patch Apply Failed` and lands in `error_ids`.
+  - The README runs the leaderboard with `--namespace swerebench --cache_level instance`.
+- **Task images** (two checked through the registry API):
+  - Each is a single `linux/amd64` manifest of 1.4 to 2.1 GB compressed. The first six
+    layers, about 1.05 GB, are shared.
+  - `WorkingDir` is `/testbed`, and the image runs as root.
+  - Conda lives in `/opt/conda`, not `/opt/miniconda3`, and the `testbed` env has Python
+    3.13.
+  - The image's `PATH` puts `/opt/conda/bin` before `/opt/conda/envs/testbed/bin`. So a
+    non-interactive `python` is the base env, without the task's dependencies.
+  - The repository is reset to the base commit, then installed with `( … ) || true`.
+    HEAD is then detached, and the remotes, refs and reflog are removed.
+  - The tag is `latest`, which can move, so the images are pinned by digest.
+
+**Prompt.** Agents get `problem_statement` verbatim through `config/prompts/swebench.md`,
+as SWE-rebench's own scaffold does. Nothing is added from `interface`: the 6 rows with an
+empty heading stay as published, and they affect every arm the same way.
+
+#### Round 14: selection, pinned images and the stage-`a` pre-registration (K93–K104)
+
+- **K93 Eligibility, as recorded.** A new module, `hcbench/rebench.py`, has pure functions
+  that tests can call without the network:
+  - `split_eligible(name, min_split)`: true when `name` fully matches
+    `[0-9]{4}_(0[1-9]|1[0-2])` and `name >= min_split` as text. So `test`, `2026_3` and
+    `" 2026_03"` are never eligible.
+  - `created_date(value)`: the first ten characters of `str(value).strip()` when they parse
+    as an ISO date (`datetime.date.fromisoformat`); otherwise `None`. `None`, `""` and text
+    that isn't a date give `None`. A `datetime` value works, because its text starts with
+    the date.
+  - `eligible_rows(rows_by_split, min_split, min_created)`: keeps the rows of eligible
+    splits whose `created_date` is not `None` and is `min_created` or later.
+    - Each kept row has `instance_id` and `repo` as text (`str(...)`), and a `split` field.
+    - The result is sorted by `instance_id`.
+- **K94 Refusals.** Each stops the selection with a message that names the cause:
+  - no eligible task (the message names the dataset, the revision, `min_split` and
+    `min_created`);
+  - an `instance_id` that appears in two eligible splits (it names the id and both splits);
+  - an eligible row without an image: `image_name` and `docker_image` both empty;
+  - an eligible row whose `image_name` and `docker_image` are both set but differ.
+- **K95 Selection and its files.** `select(...)` calls `hcbench.sampling.select_suite_a` on
+  the eligible rows with `HC_A_N` and `HC_SELECTION_SEED`, unchanged. The selection writes:
+  - `tasks.txt`: the chosen ids, sorted, one per line;
+  - `instances.jsonl`, sorted by id, with `instance_id`, `repo`, `base_commit`,
+    `problem_statement`, `created_at` (the text as published), `split` and `image`
+    (`image_name`, or `docker_image` when that is empty);
+  - `dataset.json`: the full rows of the chosen tasks, with `instance_id` and `repo` as
+    text, for the grader;
+  - `selection.json` with:
+    - `dataset`, `revision` (as requested), `resolved_revision`, `splits` (the eligible
+      split names, sorted), `min_split`, `min_created`, `n` and `seed`;
+    - `method = "hcbench.sampling.select_suite_a"`;
+    - `eligible_count`, `eligible_repos`, `eligible_digest` (`manifest_digest` of the
+      eligible ids) and `digest` (of the chosen ids);
+    - `python_version` (`platform.python_version()`) and `python_implementation`;
+    - `grader` (`HC_A_GRADER`) and `created_at`, the time of selection in UTC.
+- **K96 The dataset revision.** The selection resolves `HC_A_REVISION` (empty means the
+  hub's current main) to a commit SHA before it reads anything. It then lists the splits
+  and loads every eligible split at that SHA. If the SHA can't be resolved, it stops; there
+  is no fallback to an unpinned load.
+- **K97 Checked against the stage-`cb` file.** `python -m hcbench.prereg --stage a` takes
+  `--rules <path to the stage-cb preregistration.toml>`, and it is required. It refuses
+  when:
+  - the file is missing, has a stage other than `cb`, or is a draft;
+  - `selection.json`'s `dataset`, `min_split`, `min_created`, `n`, `seed` or `grader`
+    differs from the stage-`cb` file's `[suite_a_rules]`. Nothing overrides this;
+  - any key of the stage-`cb` `[config]` table differs from the current environment, or
+    the bundle manifest differs from the stage-`cb` `[bundle]`.
+    - `--accept-diff KEY` (repeatable; `bundle` names the bundle) lets a named difference
+      through.
+    - The stage-`a` file then lists it under `[rules_check] accepted`, with both values.
+      Every accepted difference must also be logged in `prereg/c1/DEVIATIONS.md`, and the
+      README says so.
+- **K98 Contents of a stage-`a` file.** Besides what every stage records (title, stage,
+  `created_at`, `draft`, `repo`, `config`, `bundle`, `files_sha256`), it has:
+  - `[rules_check]`: the stage-`cb` file's path, sha256 and `repo.head`, plus `accepted`;
+  - `[tasks]`: every K95 `selection.json` key except `created_at`, plus `run_digest`
+    (K104);
+  - `[task_created_at]`: each chosen task id mapped to its `created_at` text. This is what
+    the frozen `contamination` sentence promises;
+  - `[task_images]`: each chosen task id mapped to its pinned image (K103);
+  - `[excluded_tasks]`: each excluded task id mapped to its reason (K104). It is empty
+    when none is excluded;
+  - `[grader]`: `repo = HC_A_GRADER`, `commit = HC_A_GRADER_REF`,
+    `namespace = HC_A_NAMESPACE`;
+  - `files_sha256` with `arms.toml`, the prompt, `tasks.txt`, `instances.jsonl`,
+    `dataset.json`, `selection.json`, `images.digests` and `images.check.json`;
+  - `[analysis]` = K101.
+  - Nothing in the file says `n=40`, "SWE-bench Lite" or "official swebench harness".
+- **K99 New keys in `config/bench.env.example`.**
+  - `HC_A_REVISION=`: empty, meaning the hub's main on stage-`a` day.
+  - `HC_A_GRADER_REF=e4907b7a90eafaa1f0a6428fd04fe31cdd8b4284`.
+  - `HC_A_NAMESPACE=swerebench`.
+  - A non-draft stage `a` refuses a `HC_A_GRADER_REF` that isn't 40 lowercase hex
+    characters, and an empty `HC_A_NAMESPACE`.
+- **K100 Script and Makefile.**
+  - `make prereg NAME=c1-a STAGE=a RULES=c1` passes `--rules prereg/c1/preregistration.toml`.
+    `STAGE=a` without `RULES` stops before any file is written.
+  - `scripts/05_preregister.sh` runs stage `a` in this order: selection (K93–K96), image
+    pulls and digests (K103), image check (K104), then the pre-registration (K97, K98).
+  - Stage `a` reads only the `HC_A_*` keys and `HC_SELECTION_SEED`; the `HC_SWE_*` keys no
+    longer take part. `hcbench/select_tasks.py` stays as a library for a SWE-bench Lite
+    continuity check, and no script calls it.
+  - `HC_SKIP_PULL=1` is accepted only with `--draft`.
+- **K101 The stage-`a` analysis.** `ANALYSIS_PLAN_A` replaces `ANALYSIS_PLAN` for stage `a`:
+  - **H1:** pass@1, where resolved means resolved by the SWE-rebench grading fork at
+    `HC_A_GRADER_REF`. One attempt per repeat (0 and 1). Take the per-task mean over
+    repeats, then the mean over tasks.
+  - **H2:** total tokens per task and wall seconds per task, each a per-task mean over
+    repeats. Tokens per resolved task is secondary and descriptive.
+  - **Families, Holm within each:**
+    - H1 has two contrasts: `hone-inject − pi` and `hone-inject − hermes`.
+    - H2 has four tests: those two contrasts for tokens, and the same two for wall time.
+    - `hone-inject − hone-noinject` and `pi − hermes` are reported outside the families.
+  - **Tests:** a 95% paired bootstrap over tasks (10,000 resamples, seed 0). The p-value
+    comes from the paired bootstrap, plus an exact McNemar test on repeat 0 for H1.
+  - **Claim rule:** a difference is claimed only when its corrected test rejects at 0.05.
+    Otherwise the report says "no detectable difference at n=<tasks run>", with the CI.
+  - **Exclusions:**
+    - A task whose image fails the K104 check is excluded before any run, listed, and
+      not replaced.
+    - Runs with infrastructure errors are re-run, and grader infrastructure errors are
+      re-graded. Nothing else is excluded.
+  - **Contamination:** suite A results are labelled possibly contaminated (§11.16 K89).
+  - Every arm in `HC_ARMS_MAIN` runs every task at repeats `HC_A_REPEATS`.
+- **K102 Docs.** `README.md` gets a "Campaign 1, stage 2" section with the command sequence.
+  `SPEC.md` describes `hcbench.rebench` and the stage-`a` file. The §11.9 row "Stage `a` has
+  no validation" is closed.
+- **K103 Pinned images.**
+  - `images.digests` has one line per chosen task: `<image> <name>@sha256:<64 lowercase
+    hex>`.
+  - A non-draft stage `a` refuses a line that says `MISSING` or doesn't have this form, and
+    names each one.
+  - `[task_images]` maps each task to the pinned reference.
+- **K104 Image check.** `python -m hcbench.rebench check-images` runs each pinned image once
+  with no network:
+  `docker run --rm --network none --entrypoint bash <pinned> -c '<script>'`.
+  - It records HEAD in `/testbed`, `git status --porcelain`, and
+    `python -c 'import sys; print(sys.version)'` run with the K105 PATH.
+  - A task passes when HEAD equals the row's `base_commit`, the status is empty and Python
+    runs.
+  - `images.check.json` holds every result.
+  - A failing task is excluded (K101): it is removed from `tasks.txt` and listed in
+    `[excluded_tasks]` with the failed part.
+  - `selection.json` keeps the drawn list and its `digest`, and gains `excluded` and
+    `run_digest`, which is the digest of `tasks.txt`.
+  - Only the image is inspected, never a run outcome, so this is decided before any run.
+
+#### Round 15: runs and grading (K105–K109)
+
+- **K105 The task environment.** A suite A task whose image starts with `swerebench/` runs
+  with
+  `PATH=/opt/conda/envs/testbed/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/lib/jvm/java-17-openjdk-amd64/bin`.
+  - The `testbed` env comes first, as it does for SWE-bench images (`SWE_PATH`).
+  - Other suite A images keep `SWE_PATH`.
+- **K106 Runs use the pinned images.**
+  - `hcbench.matrix --suite a` takes `--image-digests`, and `scripts/10_run.sh a` passes
+    `prereg/<name>/images.digests`.
+  - Each suite A task runs `<name>@sha256:…`. A task with no pinned image stops the run
+    before any container starts.
+  - `run.json` records the reference.
+- **K107 Arms and repeats.** `scripts/10_run.sh a` uses `HC_ARMS_MAIN` and `HC_A_REPEATS`.
+  `HC_PREREG` still defaults to the campaign name, so the command is
+  `make run-a CAMPAIGN=c1-a`.
+- **K108 Grading through the fork.**
+  - When the pre-registration's `selection.json` names `SWE-rebench/SWE-bench-fork` as
+    `grader`, `scripts/20_grade.sh` installs
+    `swebench @ git+https://github.com/SWE-rebench/SWE-bench-fork.git@${HC_A_GRADER_REF}`.
+    It refuses a ref that isn't 40 lowercase hex characters.
+  - It calls `hcbench.grade` with `--namespace "${HC_A_NAMESPACE}" --cache-level instance
+    --image-digests <prereg>/images.digests`.
+  - `hcbench.grade` writes `grading/dataset.pinned.json`: the rows of `dataset.json`, with
+    `image_name` and `docker_image` replaced by the pinned reference. It passes that file
+    as `--dataset_name`.
+    - It refuses a row with no pinned image.
+    - It never passes an empty `--namespace`.
+  - It writes `grading/grader.json` with the fork's repository, commit and namespace, and
+    the sha256 of the dataset file.
+  - The SWE-bench Lite path keeps `swebench==5.0.2`.
+- **K109 Grade status.** The status mapping in `hcbench/grade.py` still applies to the fork's
+  report:
+  - `resolved_ids`, `unresolved_ids`, `empty_patch_ids` and `error_ids` mean what they
+    mean today, and apply failure is still found by its log line.
+  - An id that appears only in `incomplete_ids`, or in no list, is `missing` and gets
+    re-graded.
+
+#### Round 16: the stage-`a` report (K110–K113)
+
+- **K110 Label.** With a stage-`a` pre-registration, the suite A heading is
+  "Suite A — SWE-rebench (SWE-rebench grading fork), possibly contaminated".
+  - Under it, one line gives the creation dates from `[task_created_at]`: "Tasks created
+    <earliest> to <latest>. Qwen3.8 was released in August 2026, so the model may have seen
+    these tasks or their fixes."
+  - Without a stage-`a` pre-registration the heading says neither "SWE-bench Lite" nor
+    "official grader". It reads "Suite A".
+- **K111 H1.** The pairwise table is the H1 analysis. Under a stage-`a` pre-registration it
+  is labelled pre-registered, and its claim text uses the number of tasks run.
+- **K112 H2.** A new table has one row per contrast and metric, for `hone-inject − pi` and
+  `hone-inject − hermes` and for total tokens and wall seconds. Each row gives:
+  - the mean paired difference per task;
+  - the 95% paired bootstrap CI and p-value;
+  - Holm across the four tests;
+  - whether the difference is claimed.
+
+  The suite A table gains tokens per resolved task for each arm.
+- **K113 Conformance for stage `a`.** Each of these is a mismatch:
+  - the campaign's task digest differs from `run_digest` (or from `digest` when there is no
+    `run_digest`);
+  - a suite A run's image differs from its task's entry in `[task_images]`;
+  - an arm's repeats differ from `HC_A_REPEATS`.
+
+**Not checked off the GPU box.** The image check, the runs and the fork's grading need
+Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
+the image check, then one task on one arm, then grades it, then a `make report` dry run.
+
 ## Sources
 
 - Hermes Agent CLI reference: https://hermes-agent.nousresearch.com/docs/reference/cli-commands
