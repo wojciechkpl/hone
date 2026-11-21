@@ -59,9 +59,10 @@ for suite A, and stage 2 records the task list later.
 
 **Suite A rules.** No public SWE-rebench task is from September 2026 or later, so suite A takes
 the newest ones: split `2026_03` and later, created on or after 2026-03-01 (110 tasks from 79
-repositories on 2026-11-20). The `test` split, which holds every task, is ignored. They predate Qwen3.8, so suite A is reported as possibly
-contaminated. With so many small repositories, 60 tasks are drawn as one task from each of 60
-randomly drawn repositories (`select_suite_a` in [`SPEC.md`](SPEC.md) §2).
+repositories on 2026-11-20). These tasks predate Qwen3.8, so suite A is reported as possibly
+contaminated. The `test` split, which holds every task, is ignored. With so many small
+repositories, 60 tasks are drawn as one task from each of 60 randomly drawn repositories
+(`select_suite_a` in [`SPEC.md`](SPEC.md) §2).
 
 **Pinned versions.** Pi is `@earendil-works/pi-coding-agent` 1.5.0 on Node 22.23.4 (Pi
 needs Node 22.19 or newer; the build checks it). Every harness is told the served window; Hone

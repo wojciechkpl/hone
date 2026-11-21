@@ -1342,6 +1342,8 @@ Requirements:
   - The kit's `bench.env` gets the new values, and the runbook checks them with
     `grep -E '^HC_A_MIN_(SPLIT|CREATED)=' config/bench.env`.
 - **Left to the loader (after the tag), from the same review:**
+  - record each task's `created_at` in the stage-`a` pre-registration, as the frozen
+    `contamination` sentence promises (today stage `a` hashes only `tasks.txt`);
   - refuse an empty suite A;
   - coerce `instance_id` and `repo` to text;
   - record the Python version, since the draws depend on CPython's `random`;
