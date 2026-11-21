@@ -29,15 +29,21 @@ PY
 
 if [[ "${grader}" == "${fork_repo}" ]]; then
   ref="${HC_A_GRADER_REF:-}"; ns="${HC_A_NAMESPACE:-}"
-  if [[ -f "${prereg}/preregistration.toml" ]]; then
-    reg_ref="$(toml_grader commit)"; reg_ns="$(toml_grader namespace)"
-    [[ "${reg_ref}" =~ ^[0-9a-f]{40}$ ]] || die "the [grader] commit in ${prereg}/preregistration.toml is not 40 lowercase hex characters: '${reg_ref}'"
-    [[ -z "${ref}" || "${ref}" == "${reg_ref}" ]] || die "HC_A_GRADER_REF '${ref}' differs from the pre-registered fork commit '${reg_ref}'"
-    [[ -z "${ns}" || "${ns}" == "${reg_ns}" ]] || die "HC_A_NAMESPACE '${ns}' differs from the pre-registered namespace '${reg_ns}'"
-    ref="${reg_ref}"; ns="${reg_ns}"
-  else
-    warn "no ${prereg}/preregistration.toml; using HC_A_GRADER_REF and HC_A_NAMESPACE"
-  fi
+  # K136: fork grading needs the stage-a file; there is no fallback to the environment.
+  [[ -f "${prereg}/preregistration.toml" ]] || die "no ${prereg}/preregistration.toml (the stage a file); fork grading needs it"
+  reg_stage="$(py_toml - "${prereg}/preregistration.toml" << 'PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    print(tomllib.load(fh).get("stage", ""))
+PY
+)"
+  [[ "${reg_stage}" == a ]] || die "${prereg}/preregistration.toml has stage '${reg_stage}', not the stage a file"
+  reg_ref="$(toml_grader commit)"; reg_ns="$(toml_grader namespace)"
+  [[ "${reg_ref}" =~ ^[0-9a-f]{40}$ ]] || die "the [grader] commit in ${prereg}/preregistration.toml is not 40 lowercase hex characters: '${reg_ref}'"
+  [[ -n "${reg_ns}" ]] || die "the [grader] namespace in ${prereg}/preregistration.toml is empty"
+  [[ -z "${ref}" || "${ref}" == "${reg_ref}" ]] || die "HC_A_GRADER_REF '${ref}' differs from the pre-registered fork commit '${reg_ref}'"
+  [[ -z "${ns}" || "${ns}" == "${reg_ns}" ]] || die "HC_A_NAMESPACE '${ns}' differs from the pre-registered namespace '${reg_ns}'"
+  ref="${reg_ref}"; ns="${reg_ns}"
   [[ "${ref}" =~ ^[0-9a-f]{40}$ ]] || die "HC_A_GRADER_REF must be 40 lowercase hex characters, got '${ref}'"
   need uv
   (cd "${HC_ROOT}" && uv run --no-project -q --python 3.12 --with "aiohttp>=3.9" \

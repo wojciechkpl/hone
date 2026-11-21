@@ -111,12 +111,14 @@ ANALYSIS_PLAN_A = {
     "Otherwise the report says no detectable difference at n=<tasks run>, with the confidence "
     "interval.",
     "exclusions": "A task whose image fails the image check is excluded before any run, listed, "
-    "and not replaced. Runs with infrastructure errors are re-run. Grader infrastructure errors "
-    "(status grader_infra, found from the fork's logs) are re-graded until they clear. A result "
-    "that is ambiguous (a missing module, no tests collected, a test timeout) is re-graded; one "
-    "that is ambiguous on its first grade and on every re-grade, over at least two attempts, is "
-    "final as ambiguous_repeated and counts as unresolved, and the report lists each. Nothing "
-    "else is excluded.",
+    "and not replaced. Runs with infrastructure errors are re-run. A failed instance whose "
+    "harness error block (never the patch or the tests' output) matches a grader infrastructure "
+    "signature is grader_infra and is re-graded. A match that may also be the patch's doing (a "
+    "missing module, no tests collected, a test timeout) is ambiguous and is re-graded too. An "
+    "instance with at least two attempts after its last grader_infra, all ambiguous, is final as "
+    "ambiguous_repeated and counts as unresolved. An instance whose last three attempts in a row "
+    "are grader_infra is grader_infra_final: it is no longer re-graded, it is left out of pass@1, "
+    "and the report lists it as unjudged, per arm. Nothing else is excluded.",
     "contamination": "Suite A results are labelled possibly contaminated (see suite_a_rules in "
     "the stage cb pre-registration).",
     "arms": "Every arm in HC_ARMS_MAIN runs every task at the repeats in HC_A_REPEATS.",

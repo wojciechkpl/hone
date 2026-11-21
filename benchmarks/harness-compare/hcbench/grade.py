@@ -13,7 +13,8 @@ Status → resolved:
   unresolved | empty_patch                  0
   apply_failed | error (tests errored/timed out, patch-caused)   0
   grader_infra | ambiguous | missing        blank → re-grade (exit 1)
-  ambiguous_repeated (fork mode: ambiguous on every attempt, at least two)   0
+  ambiguous_repeated (fork mode: 2+ ambiguous attempts after the last grader_infra)   0
+  grader_infra_final (fork mode: 3 grader_infra attempts in a row)        blank, never re-graded
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ from .suites import parse_digests
 
 APPLY_PATCH_FAIL = ">>>>> Patch Apply Failed"
 REGRADE = {"grader_infra", "ambiguous", "missing"}
+BLANK = REGRADE | {"grader_infra_final"}  # no 0 or 1: left out of pass@1
+GRADER_INFRA_FINAL_AFTER = 3  # consecutive grader_infra attempts (K135)
 
 # Fork mode (K129): the fork (swebench 4.0.3) has no infrastructure classifier, so its logs are
 # classified here. The signature table below, from `INFRA_FAILURE_SIGNATURES` in swebench 5.0.2
@@ -67,10 +70,13 @@ INFRA_FAILURE_SIGNATURES: tuple[tuple[str, str, str], ...] = (
     ),
     ("missing_module", TIER_AMBIGUOUS, r"Cannot find module|MODULE_NOT_FOUND|ModuleNotFoundError"),
     ("no_tests_collected", TIER_AMBIGUOUS, r"no tests ran|collected 0 items"),
-    ("tests_timed_out", TIER_AMBIGUOUS, r"Timeout error: \d+ seconds exceeded"),
+    (
+        "tests_timed_out",
+        TIER_AMBIGUOUS,
+        r"Timeout error: \d+ seconds exceeded|Test timed out after \d+ seconds",
+    ),
 )
 _COMPILED = tuple((r, t, re.compile(p, re.MULTILINE)) for r, t, p in INFRA_FAILURE_SIGNATURES)
-FORK_LOGS = ("run_instance.log", "test_output.txt")
 
 
 def collect(campaign: Path) -> dict[tuple[str, int], list[dict]]:
@@ -160,26 +166,33 @@ def write_pinned_dataset(args, gdir: Path) -> Path:
     return out
 
 
-def _fork_log_text(rdir: Path, swe_run_id: str, iid: str) -> str:
-    chunks = []
-    for name in FORK_LOGS:
-        for log in sorted(rdir.glob(f"logs/run_evaluation/{swe_run_id}/*/{iid}/{name}")):
-            try:
-                chunks.append(log.read_text(errors="replace"))
-            except OSError:
-                continue
-    return "\n".join(chunks)
+def _error_block(rdir: Path, swe_run_id: str, iid: str) -> str:
+    """K134: the harness's own error, the text after the last line of run_instance.log that
+    starts with ``Error in evaluating model for <iid>:``, up to the end of the file. The patch
+    sections and test_output.txt are text the agent controls, and are never read."""
+    start = re.compile(rf"^Error in evaluating model for {re.escape(iid)}:", re.MULTILINE)
+    blocks = []
+    for log in sorted(rdir.glob(f"logs/run_evaluation/{swe_run_id}/*/{iid}/run_instance.log")):
+        try:
+            text = log.read_text(errors="replace")
+        except OSError:
+            continue
+        last = None
+        for last in start.finditer(text):  # noqa: B007  (only the last match matters)
+            pass
+        if last is not None:
+            blocks.append(text[last.end() :])
+    return "\n".join(blocks)
 
 
 def fork_status_for(iid: str, report: dict, rdir: Path, swe_run_id: str) -> str:
-    """K129: status_for, then the fork's failures are told apart from the patch's by its logs.
-    An apply failure keeps precedence; the first signature that matches decides the tier."""
+    """K129, K134: status_for, then a fork ``error`` is told apart from the patch's failure by
+    the harness's error block. ``unresolved`` ran its tests and stays; an apply failure (found
+    by status_for) keeps precedence; the first signature that matches decides the tier."""
     status = status_for(iid, report, rdir, swe_run_id)
-    if status not in ("unresolved", "error"):
+    if status != "error":
         return status
-    text = _fork_log_text(rdir, swe_run_id, iid)
-    if APPLY_PATCH_FAIL in text:
-        return "apply_failed"
+    text = _error_block(rdir, swe_run_id, iid)
     for _, tier, pattern in _COMPILED:
         if pattern.search(text):
             return "grader_infra" if tier == TIER_ENVIRONMENT else "ambiguous"
@@ -217,16 +230,28 @@ def evaluate(args, pred_path: Path, out_dir: Path, run_id: str, ids: list[str]) 
 def latest_status(iid: str, attempts: list[tuple[dict, Path, str]], fork: bool = False) -> str:
     """Later attempts (re-grades) override earlier ones for the instances they cover.
 
-    Fork mode (K130): an instance that is ambiguous on its first grade and on every re-grade,
-    over at least two attempts, is final as ``ambiguous_repeated`` and counts as unresolved.
-    ``grader_infra`` never becomes final."""
+    Fork mode (K135): after three attempts in a row that end ``grader_infra`` the instance is
+    ``grader_infra_final`` (never re-graded, blank). With at least two attempts after its last
+    ``grader_infra``, all ``ambiguous``, it is ``ambiguous_repeated`` (counts as unresolved)."""
     judge = fork_status_for if fork else status_for
     seen = [s for s in (judge(iid, r, d, rid) for r, d, rid in attempts) if s != "missing"]
     if not seen:
         return "missing"
-    if fork and len(seen) >= 2 and all(s == "ambiguous" for s in seen):
+    final = seen[-1]
+    if not fork:
+        return final
+    trailing = 0
+    for s in reversed(seen):
+        if s != "grader_infra":
+            break
+        trailing += 1
+    if final == "grader_infra" and trailing >= GRADER_INFRA_FINAL_AFTER:
+        return "grader_infra_final"
+    last_infra = max((k for k, s in enumerate(seen) if s == "grader_infra"), default=-1)
+    after = seen[last_infra + 1 :]
+    if len(after) >= 2 and all(s == "ambiguous" for s in after):
         return "ambiguous_repeated"
-    return seen[-1]
+    return final
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -313,7 +338,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "run_id": p["run_id"],
                     "patch_sha256": p["patch_sha256"],
-                    "resolved": "" if status in REGRADE else int(status == "resolved"),
+                    "resolved": "" if status in BLANK else int(status == "resolved"),
                     "status": status,
                 }
             )
@@ -325,6 +350,11 @@ def main(argv: list[str] | None = None) -> int:
         w.writerows(rows)
     pending = sum(r["status"] in REGRADE for r in rows)
     print(f"[grade] wrote {gdir / 'outcomes.csv'} ({len(rows)} rows, {pending} need re-grading)")
+    final = sorted({r["run_id"] for r in rows if r["status"] == "grader_infra_final"})
+    if final:
+        print(
+            f"[grade] {len(final)} runs are grader_infra_final (unjudged, not re-graded): {final}"
+        )
     if pending:
         print("[grade] re-run with --regrade to re-grade grader_infra/ambiguous/missing instances")
     return 1 if pending else 0
