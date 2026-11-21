@@ -19,11 +19,19 @@ py_toml() { # python3 needs tomllib (3.11+); otherwise use the rig's uv python
   if python3 -c 'import tomllib' 2>/dev/null; then python3 "$@"
   else (cd "${HC_ROOT}" && uv run --no-project -q --python 3.12 python "$@"); fi
 }
-toml_grader() { # key
-  py_toml - "${prereg}/preregistration.toml" "$1" << 'PY'
+read_grader_toml() { # prints stage, [grader] commit and namespace, one per line; no traceback
+  py_toml - "${prereg}/preregistration.toml" << 'PY'
 import sys, tomllib
-with open(sys.argv[1], "rb") as fh:
-    print(tomllib.load(fh).get("grader", {}).get(sys.argv[2], ""))
+try:
+    with open(sys.argv[1], "rb") as fh:
+        data = tomllib.load(fh)
+except (OSError, tomllib.TOMLDecodeError) as exc:
+    print(f"cannot read {sys.argv[1]}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+grader = data.get("grader", {})
+print(data.get("stage", ""))
+print(grader.get("commit", ""))
+print(grader.get("namespace", ""))
 PY
 }
 
@@ -31,14 +39,9 @@ if [[ "${grader}" == "${fork_repo}" ]]; then
   ref="${HC_A_GRADER_REF:-}"; ns="${HC_A_NAMESPACE:-}"
   # K136: fork grading needs the stage-a file; there is no fallback to the environment.
   [[ -f "${prereg}/preregistration.toml" ]] || die "no ${prereg}/preregistration.toml (the stage a file); fork grading needs it"
-  reg_stage="$(py_toml - "${prereg}/preregistration.toml" << 'PY'
-import sys, tomllib
-with open(sys.argv[1], "rb") as fh:
-    print(tomllib.load(fh).get("stage", ""))
-PY
-)"
+  toml_out="$(read_grader_toml)" || die "cannot read ${prereg}/preregistration.toml as TOML (the stage a file)"
+  { read -r reg_stage; read -r reg_ref; read -r reg_ns; } <<< "${toml_out}" || true
   [[ "${reg_stage}" == a ]] || die "${prereg}/preregistration.toml has stage '${reg_stage}', not the stage a file"
-  reg_ref="$(toml_grader commit)"; reg_ns="$(toml_grader namespace)"
   [[ "${reg_ref}" =~ ^[0-9a-f]{40}$ ]] || die "the [grader] commit in ${prereg}/preregistration.toml is not 40 lowercase hex characters: '${reg_ref}'"
   [[ -n "${reg_ns}" ]] || die "the [grader] namespace in ${prereg}/preregistration.toml is empty"
   [[ -z "${ref}" || "${ref}" == "${reg_ref}" ]] || die "HC_A_GRADER_REF '${ref}' differs from the pre-registered fork commit '${reg_ref}'"

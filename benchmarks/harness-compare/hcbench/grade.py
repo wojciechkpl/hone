@@ -35,6 +35,7 @@ from .suites import parse_digests
 APPLY_PATCH_FAIL = ">>>>> Patch Apply Failed"
 REGRADE = {"grader_infra", "ambiguous", "missing"}
 BLANK = REGRADE | {"grader_infra_final"}  # no 0 or 1: left out of pass@1
+FORK_LOG_PREFIX = r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3}"  # %(asctime)s of the fork
 GRADER_INFRA_FINAL_AFTER = 3  # consecutive grader_infra attempts (K135)
 
 # Fork mode (K129): the fork (swebench 4.0.3) has no infrastructure classifier, so its logs are
@@ -167,10 +168,15 @@ def write_pinned_dataset(args, gdir: Path) -> Path:
 
 
 def _error_block(rdir: Path, swe_run_id: str, iid: str) -> str:
-    """K134: the harness's own error, the text after the last line of run_instance.log that
-    starts with ``Error in evaluating model for <iid>:``, up to the end of the file. The patch
-    sections and test_output.txt are text the agent controls, and are never read."""
-    start = re.compile(rf"^Error in evaluating model for {re.escape(iid)}:", re.MULTILINE)
+    """K134, K138: the harness's own error, the text after the last line of run_instance.log
+    that starts with the fork's logging prefix and ``Error in evaluating model for <iid>:``, up
+    to the end of the file. The fork logs ``%(asctime)s - %(levelname)s - %(message)s``; a Git
+    diff line or ``git apply`` output can't take that form. The patch sections and
+    test_output.txt are text the agent controls, and are never read."""
+    start = re.compile(
+        rf"^{FORK_LOG_PREFIX} - ERROR - Error in evaluating model for {re.escape(iid)}:",
+        re.MULTILINE,
+    )
     blocks = []
     for log in sorted(rdir.glob(f"logs/run_evaluation/{swe_run_id}/*/{iid}/run_instance.log")):
         try:
@@ -350,11 +356,13 @@ def main(argv: list[str] | None = None) -> int:
         w.writerows(rows)
     pending = sum(r["status"] in REGRADE for r in rows)
     print(f"[grade] wrote {gdir / 'outcomes.csv'} ({len(rows)} rows, {pending} need re-grading)")
-    final = sorted({r["run_id"] for r in rows if r["status"] == "grader_infra_final"})
-    if final:
-        print(
-            f"[grade] {len(final)} runs are grader_infra_final (unjudged, not re-graded): {final}"
-        )
+    for r in rows:
+        if r["status"] == "grader_infra_final":  # K140: hard to miss, every time
+            print(
+                f"WARN: {r['run_id']} is grader_infra_final: unjudged, not re-graded, "
+                "left out of pass@1",
+                file=sys.stderr,
+            )
     if pending:
         print("[grade] re-run with --regrade to re-grade grader_infra/ambiguous/missing instances")
     return 1 if pending else 0

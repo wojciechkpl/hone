@@ -598,7 +598,7 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     `--accept-diff` value, and the preflight and the final check compare the same stripped
     values.
 
-- **Round 15b and 15c (K129-K137).**
+- **Round 15b to 15d (K129-K140).**
   - *Classification (K129, K134).* In fork mode `hcbench.grade` classifies only `error_ids`
     instances; `unresolved_ids` stays `unresolved`. It matches only the error block of
     `run_instance.log` under `logs/run_evaluation/<run_id>/<model>/<instance>/`: the text after
@@ -621,6 +621,16 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     naming both values. There is no fallback to the environment.
   - *Versions (K132).* `grading/grader.json` also has `swebench_version` and `docker_version`
     (`grade.package_version`, `importlib.metadata`).
+  - *Log prefix (K138).* The fork logs `%(asctime)s - %(levelname)s - %(message)s`, so the error
+    block starts after the last line beginning
+    `\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} - ERROR - Error in evaluating model for <iid>:`
+    (`<iid>` escaped). A diff line or `git apply` output can't take that form.
+  - *Contrasts (K139).* `ANALYSIS_PLAN_A`'s exclusions text adds that a task with no judged run
+    for an arm is left out of every paired contrast with that arm, and the report gives the count
+    per contrast.
+  - *Hard to miss (K140).* `hcbench.grade` prints each `grader_infra_final` run to stderr as a
+    `WARN` line on every run. In fork mode `scripts/20_grade.sh` refuses a missing, unreadable or
+    non-stage-`a` `preregistration.toml` with its own message.
   - *Gaps (K133).* The preflight and the final check compare the `HC_A_*` rule values unstripped.
 
 ### Campaign 1, round 2 (K18-K29)
