@@ -76,84 +76,92 @@ def run_fork(tmp_path, monkeypatch, steps, ids=("a__a-1",), *extra, fork=True, c
     return rc, camp, ev
 
 
-def step(bucket, iid, text, filename="test_output.txt", **more):
-    return {"report": {bucket: [iid], **more}, "logs": {iid: {filename: text}}}
+def run_log(iid, error=None, patch="diff --git a/f.py b/f.py\n+pass\n"):
+    """A run_instance.log as the fork writes it: the patch under "Git diff before:" and
+    "Git diff after:", then, when the run failed, the harness's own error and traceback."""
+    text = (
+        f"Evaluating {iid}\nGit diff before:\n{patch}\nApplying patch...\n"
+        f"Git diff after:\n{patch}\n"
+    )
+    if error is not None:
+        text += (
+            f"Error in evaluating model for {iid}: {error}\n"
+            'Traceback (most recent call last):\n  File "eval.py", line 1, in run_instance\n'
+        )
+    return text
 
 
-AMB = "Timeout error: 1800 seconds exceeded."
-INFRA = "Error creating container"
+def step(iid, error=None, *, bucket="error_ids", log=None, test_output=None, **more):
+    """A grading attempt for one instance. K134: the signature belongs in `error`, the
+    harness's error block; `log` and `test_output` replace the whole files."""
+    files = {"run_instance.log": log if log is not None else run_log(iid, error)}
+    if test_output is not None:
+        files["test_output.txt"] = test_output
+    return {"report": {bucket: [iid], **more}, "logs": {iid: files}}
 
-# ---- K129 the signatures ----
+
+AMB = "TimeoutError: Test timed out after 1800 seconds."  # what the fork's eval.py writes
+INFRA = "docker.errors.APIError: Error creating container"
+
+# ---- K129 the signatures (K134: error_ids only, in the error block) -----------------------
 
 ENVIRONMENT = [
-    ("Error building image", "error_ids", "run_instance.log"),
-    ("Error occurred while pulling image x", "unresolved_ids", "run_instance.log"),
-    ("Error creating container", "error_ids", "run_instance.log"),
-    ("Read timed out", "unresolved_ids", "run_instance.log"),
-    ("UnixHTTPConnectionPool(host='localhost')", "error_ids", "run_instance.log"),
-    ("Failed to launch the browser", "error_ids", "test_output.txt"),
-    ("Failed to connect to the bus", "unresolved_ids", "test_output.txt"),
-    ("cannot open display", "error_ids", "test_output.txt"),
-    ("Missing X server", "unresolved_ids", "run_instance.log"),
-    ("unable to open X display", "error_ids", "run_instance.log"),
-    ("Cannot allocate memory", "error_ids", "test_output.txt"),
-    ("OutOfMemoryError", "unresolved_ids", "test_output.txt"),
-    ("something\nKilled\nelse", "error_ids", "test_output.txt"),
-    ("Error response from daemon: conflict", "error_ids", "run_instance.log"),
-    ("Cannot connect to the Docker daemon", "unresolved_ids", "run_instance.log"),
-    ("Could not resolve host: pypi.org", "error_ids", "test_output.txt"),
-    ("Temporary failure in name resolution", "unresolved_ids", "test_output.txt"),
+    "Error building image",
+    "Error occurred while pulling image x",
+    "Error creating container",
+    "Read timed out",
+    "UnixHTTPConnectionPool(host='localhost')",
+    "Failed to launch the browser",
+    "Failed to connect to the bus",
+    "cannot open display",
+    "Missing X server",
+    "unable to open X display",
+    "Cannot allocate memory",
+    "OutOfMemoryError",
+    "boom\nKilled\nelse",
+    "Error response from daemon: conflict",
+    "Cannot connect to the Docker daemon",
+    "Could not resolve host: pypi.org",
+    "Temporary failure in name resolution",
 ]
 AMBIGUOUS = [
-    ("Cannot find module 'x'", "error_ids", "test_output.txt"),
-    ("MODULE_NOT_FOUND", "unresolved_ids", "test_output.txt"),
-    ("ModuleNotFoundError: No module named 'y'", "error_ids", "run_instance.log"),
-    ("no tests ran in 0.1s", "unresolved_ids", "test_output.txt"),
-    ("collected 0 items", "error_ids", "test_output.txt"),
-    ("Timeout error: 1800 seconds exceeded.", "error_ids", "test_output.txt"),
+    "Cannot find module 'x'",
+    "MODULE_NOT_FOUND",
+    "ModuleNotFoundError: No module named 'y'",
+    "no tests ran in 0.1s",
+    "collected 0 items",
+    "Timeout error: 1800 seconds exceeded.",
+    "TimeoutError: Test timed out after 1800 seconds.",  # K134: the fork's own wording
 ]
 
 
-@pytest.mark.parametrize(("text", "bucket", "filename"), ENVIRONMENT)
-def test_k129_environment_signature_should_be_grader_infra(
-    tmp_path, monkeypatch, text, bucket, filename
-):
-    rc, camp, _ = run_fork(tmp_path, monkeypatch, [step(bucket, "a__a-1", text, filename)])
+@pytest.mark.parametrize("text", ENVIRONMENT)
+def test_k129_environment_signature_should_be_grader_infra(tmp_path, monkeypatch, text):
+    rc, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", text)])
     assert outcomes(camp)["a__a-1"] == ("", "grader_infra")
     assert rc == 1  # to be re-graded
 
 
-@pytest.mark.parametrize(("text", "bucket", "filename"), AMBIGUOUS)
-def test_k129_ambiguous_signature_should_be_ambiguous(
-    tmp_path, monkeypatch, text, bucket, filename
-):
-    rc, camp, _ = run_fork(tmp_path, monkeypatch, [step(bucket, "a__a-1", text, filename)])
+@pytest.mark.parametrize("text", AMBIGUOUS)
+def test_k129_ambiguous_signature_should_be_ambiguous(tmp_path, monkeypatch, text):
+    rc, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", text)])
     assert outcomes(camp)["a__a-1"] == ("", "ambiguous")
     assert rc == 1
 
 
-@pytest.mark.parametrize("bucket", ["error_ids", "unresolved_ids"])
-@pytest.mark.parametrize("filename", ["run_instance.log", "test_output.txt"])
-def test_k129_both_buckets_and_both_files_should_be_read(tmp_path, monkeypatch, bucket, filename):
-    _, camp, _ = run_fork(tmp_path, monkeypatch, [step(bucket, "a__a-1", INFRA, filename)])
-    assert outcomes(camp)["a__a-1"][1] == "grader_infra"
-
-
-@pytest.mark.parametrize(
-    ("bucket", "want"), [("error_ids", "error"), ("unresolved_ids", "unresolved")]
-)
 @pytest.mark.parametrize(
     "text",
     [
         "AssertionError: 1 != 2",
         "Killed in action",  # ^Killed$ is a whole line
         "Timeout error: seconds exceeded",  # needs digits
+        "Test timed out after seconds",  # needs digits
         "",
     ],
 )
-def test_k129_no_signature_should_keep_the_status(tmp_path, monkeypatch, bucket, want, text):
-    rc, camp, _ = run_fork(tmp_path, monkeypatch, [step(bucket, "a__a-1", text)])
-    assert outcomes(camp)["a__a-1"] == ("0", want)
+def test_k129_no_signature_should_keep_the_status(tmp_path, monkeypatch, text):
+    rc, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", text)])
+    assert outcomes(camp)["a__a-1"] == ("0", "error")
     assert rc == 0
 
 
@@ -166,23 +174,15 @@ def test_k129_the_first_signature_should_win_so_the_environment_tier_beats_ambig
     tmp_path, monkeypatch
 ):
     text = "ModuleNotFoundError: x\nTimeout error: 5 seconds exceeded.\nCannot allocate memory"
-    _, camp, _ = run_fork(tmp_path, monkeypatch, [step("error_ids", "a__a-1", text)])
+    _, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", text)])
     assert outcomes(camp)["a__a-1"][1] == "grader_infra"
 
 
-def test_k129_signatures_may_be_split_over_the_two_files(tmp_path, monkeypatch):
-    s = {"report": {"error_ids": ["a__a-1"]},
-         "logs": {"a__a-1": {"run_instance.log": "ModuleNotFoundError: x",
-                             "test_output.txt": "Error response from daemon"}}}  # fmt: skip
-    _, camp, _ = run_fork(tmp_path, monkeypatch, [s])
-    assert outcomes(camp)["a__a-1"][1] == "grader_infra"  # the environment tier wins
-
-
 def test_k129_apply_failure_should_keep_precedence_over_every_signature(tmp_path, monkeypatch):
-    text = ">>>>> Patch Apply Failed\nError creating container\nTimeout error: 5 seconds exceeded."
-    rc, camp, _ = run_fork(
-        tmp_path, monkeypatch, [step("error_ids", "a__a-1", text, "run_instance.log")]
+    log = (
+        run_log("a__a-1", INFRA) + ">>>>> Patch Apply Failed\nTimeout error: 5 seconds exceeded.\n"
     )
+    rc, camp, _ = run_fork(tmp_path, monkeypatch, [step("a__a-1", log=log)])
     assert outcomes(camp)["a__a-1"] == ("0", "apply_failed")
     assert rc == 0
 
@@ -191,7 +191,7 @@ def test_k129_resolved_and_empty_patch_should_never_be_classified(tmp_path, monk
     ids = ("a__a-1", "b__b-2")
     s = {
         "report": {"resolved_ids": ["a__a-1"], "empty_patch_ids": ["b__b-2"]},
-        "logs": {i: {"test_output.txt": INFRA + "\n" + AMB} for i in ids},
+        "logs": {i: {"run_instance.log": run_log(i, INFRA + "\n" + AMB)} for i in ids},
     }
     rc, camp, _ = run_fork(tmp_path, monkeypatch, [s], ids)
     assert outcomes(camp) == {"a__a-1": ("1", "resolved"), "b__b-2": ("0", "empty_patch")}
@@ -203,9 +203,9 @@ def test_k129_each_instance_should_be_classified_from_its_own_logs(tmp_path, mon
     s = {
         "report": {"error_ids": list(ids)},
         "logs": {
-            "a__a-1": {"run_instance.log": INFRA},
-            "b__b-2": {"test_output.txt": AMB},
-            "c__c-3": {"test_output.txt": "AssertionError"},
+            "a__a-1": {"run_instance.log": run_log("a__a-1", INFRA)},
+            "b__b-2": {"run_instance.log": run_log("b__b-2", AMB)},
+            "c__c-3": {"run_instance.log": run_log("c__c-3", "AssertionError")},
         },
     }
     _, camp, _ = run_fork(tmp_path, monkeypatch, [s], ids)
@@ -220,8 +220,8 @@ def test_k129_the_lite_path_should_not_classify_logs(tmp_path, monkeypatch):
     s = {
         "report": {"error_ids": ["a__a-1"], "unresolved_ids": ["b__b-2"]},
         "logs": {
-            "a__a-1": {"run_instance.log": INFRA},
-            "b__b-2": {"test_output.txt": "Cannot allocate memory"},
+            "a__a-1": {"run_instance.log": run_log("a__a-1", INFRA)},
+            "b__b-2": {"run_instance.log": run_log("b__b-2", "Cannot allocate memory")},
         },
     }
     rc, camp, _ = run_fork(tmp_path, monkeypatch, [s], ("a__a-1", "b__b-2"), fork=False)
@@ -235,86 +235,100 @@ def test_k129_the_lite_path_should_keep_the_report_infra_lists(tmp_path, monkeyp
     assert outcomes(camp) == {"a__a-1": ("", "grader_infra"), "b__b-2": ("", "ambiguous")}
 
 
-# ---- K130 the final rule for ambiguous results ----
+# ---- K130 / K135 ending every run ----
 
 
-def amb_step():
-    return step("error_ids", "a__a-1", AMB)
+def attempt(kind, iid="a__a-1"):
+    if kind == "resolved":
+        return {"report": {"resolved_ids": [iid]}}
+    return step(iid, {"infra": INFRA, "amb": AMB, "error": "AssertionError"}[kind])
+
+
+def run_attempts(tmp_path, monkeypatch, kinds, ids=("a__a-1",)):
+    """One main() call grades once and re-grades once; every later call re-grades once more.
+    Returns (rc of the last call, campaign dir, the fake evaluator)."""
+    steps = [attempt(k, ids[0]) for k in kinds]
+    rc, camp, ev = run_fork(tmp_path, monkeypatch, steps, ids, "--regrade")
+    for _ in range(max(0, len(kinds) - 2)):
+        rc = grade.main([*grade_args(camp, tmp_path / "prereg"), "--regrade"])
+    return rc, camp, ev
 
 
 def test_k130_a_single_attempt_should_stay_ambiguous(tmp_path, monkeypatch):
-    rc, camp, ev = run_fork(tmp_path, monkeypatch, [amb_step()])
+    rc, camp, ev = run_fork(tmp_path, monkeypatch, [attempt("amb")])
     assert outcomes(camp)["a__a-1"] == ("", "ambiguous")
     assert rc == 1 and len(ev.cmds) == 1
 
 
-def test_k130_ambiguous_on_every_attempt_should_become_ambiguous_repeated(tmp_path, monkeypatch):
-    rc, camp, ev = run_fork(
-        tmp_path, monkeypatch, [amb_step(), amb_step()], ("a__a-1",), "--regrade"
-    )
-    assert len(ev.cmds) == 2
-    assert outcomes(camp)["a__a-1"] == ("0", "ambiguous_repeated")  # counts as unresolved
-    assert rc == 0  # nothing left to re-grade
+@pytest.mark.parametrize(
+    ("kinds", "want", "evaluations"),
+    [
+        (["amb", "amb"], ("0", "ambiguous_repeated"), 2),
+        (["infra", "amb", "amb"], ("0", "ambiguous_repeated"), 3),  # K137
+        (["infra", "infra", "amb", "amb"], ("0", "ambiguous_repeated"), 4),
+        (["amb", "infra", "amb", "amb"], ("0", "ambiguous_repeated"), 4),
+        (["infra", "amb"], ("", "ambiguous"), 2),  # one ambiguous attempt after the infra
+        (["amb", "infra", "amb"], ("", "ambiguous"), 3),
+        (["infra", "infra", "amb"], ("", "ambiguous"), 3),
+        (["infra", "infra"], ("", "grader_infra"), 2),  # not final after 2 attempts (K135)
+        (["infra", "infra", "amb", "infra"], ("", "grader_infra"), 4),  # not 3 in a row
+        (["infra", "infra", "infra"], ("", "grader_infra_final"), 3),  # K137
+        (["amb", "infra", "infra", "infra"], ("", "grader_infra_final"), 4),
+        (["infra"] * 5, ("", "grader_infra_final"), 3),  # no fourth attempt (K135)
+        (["infra", "infra", "resolved"], ("1", "resolved"), 3),
+        (["amb", "error"], ("0", "error"), 2),
+        (["infra", "error"], ("0", "error"), 2),
+    ],
+)
+def test_k135_every_run_should_end_judged_or_final(tmp_path, monkeypatch, kinds, want, evaluations):
+    _, camp, ev = run_attempts(tmp_path, monkeypatch, kinds)
+    assert outcomes(camp)["a__a-1"] == want
+    assert len(ev.cmds) == evaluations
 
 
-def test_k130_ambiguous_repeated_should_persist_and_not_be_regraded_again(tmp_path, monkeypatch):
-    _, camp, ev = run_fork(
-        tmp_path, monkeypatch, [amb_step(), amb_step()], ("a__a-1",), "--regrade"
-    )
-    before = len(ev.cmds)
-    for extra in ((), ("--regrade",)):
-        rc = grade.main(grade_args(camp, tmp_path / "prereg", **{}) + list(extra))
-        assert rc == 0
-        assert outcomes(camp)["a__a-1"] == ("0", "ambiguous_repeated")
-    assert len(ev.cmds) == before
+def test_k135_a_final_status_should_not_be_regraded_again(tmp_path, monkeypatch):
+    for kinds, final in (
+        (["amb", "amb"], "ambiguous_repeated"),
+        (["infra"] * 3, "grader_infra_final"),
+    ):
+        sub = tmp_path / final
+        sub.mkdir()
+        mp = pytest.MonkeyPatch()
+        try:
+            _, camp, ev = run_attempts(sub, mp, kinds)
+            before = len(ev.cmds)
+            for _ in range(2):
+                grade.main([*grade_args(camp, sub / "prereg"), "--regrade"])
+                grade.main(grade_args(camp, sub / "prereg"))
+                assert outcomes(camp)["a__a-1"][1] == final
+            assert len(ev.cmds) == before
+        finally:
+            mp.undo()
 
 
-def test_k130_a_regrade_that_resolves_should_end_resolved(tmp_path, monkeypatch):
-    ok = {"report": {"resolved_ids": ["a__a-1"]}}
-    rc, camp, _ = run_fork(tmp_path, monkeypatch, [amb_step(), ok], ("a__a-1",), "--regrade")
-    assert outcomes(camp)["a__a-1"] == ("1", "resolved")
+def test_k135_a_final_grader_failure_should_stay_blank_and_not_count_as_resolved(
+    tmp_path, monkeypatch
+):
+    _, camp, _ = run_attempts(tmp_path, monkeypatch, ["infra"] * 3)
+    assert outcomes(camp)["a__a-1"][0] == ""  # left out of pass@1, not scored 0
+
+
+def test_k130_ambiguous_repeated_should_count_as_unresolved(tmp_path, monkeypatch):
+    rc, camp, _ = run_attempts(tmp_path, monkeypatch, ["amb", "amb"])
+    assert outcomes(camp)["a__a-1"] == ("0", "ambiguous_repeated")
     assert rc == 0
-
-
-def test_k130_a_regrade_without_a_signature_should_end_as_a_plain_failure(tmp_path, monkeypatch):
-    plain = step("error_ids", "a__a-1", "AssertionError")
-    _, camp, _ = run_fork(tmp_path, monkeypatch, [amb_step(), plain], ("a__a-1",), "--regrade")
-    assert outcomes(camp)["a__a-1"] == ("0", "error")
-
-
-def test_k130_a_first_grade_that_was_infra_should_not_count_towards_repeated(tmp_path, monkeypatch):
-    infra = step("error_ids", "a__a-1", INFRA)
-    rc, camp, _ = run_fork(tmp_path, monkeypatch, [infra, amb_step()], ("a__a-1",), "--regrade")
-    assert outcomes(camp)["a__a-1"] == ("", "ambiguous")
-    assert rc == 1
-
-
-def test_k130_grader_infra_should_never_become_final(tmp_path, monkeypatch):
-    infra = step("error_ids", "a__a-1", INFRA)
-    rc, camp, ev = run_fork(tmp_path, monkeypatch, [infra], ("a__a-1",), "--regrade")
-    assert outcomes(camp)["a__a-1"] == ("", "grader_infra") and rc == 1
-    for _ in range(3):  # more re-grades, still infra
-        rc = grade.main([*grade_args(camp, tmp_path / "prereg"), "--regrade"])
-        assert outcomes(camp)["a__a-1"] == ("", "grader_infra") and rc == 1
-    assert len(ev.cmds) >= 5
-
-
-def test_k130_ambiguous_after_infra_after_ambiguous_should_not_be_repeated(tmp_path, monkeypatch):
-    steps = [amb_step(), step("error_ids", "a__a-1", INFRA), amb_step()]
-    _, camp, _ = run_fork(tmp_path, monkeypatch, steps, ("a__a-1",), "--regrade")
-    again = grade.main([*grade_args(camp, tmp_path / "prereg"), "--regrade"])
-    assert outcomes(camp)["a__a-1"][1] != "ambiguous_repeated"
-    assert again == 1
 
 
 def test_k130_the_rule_should_apply_per_instance(tmp_path, monkeypatch):
     ids = ("a__a-1", "b__b-2")
     both = {
         "report": {"error_ids": list(ids)},
-        "logs": {i: {"test_output.txt": AMB} for i in ids},
+        "logs": {i: {"run_instance.log": run_log(i, AMB)} for i in ids},
     }
-    second = {"report": {"error_ids": ["a__a-1"], "resolved_ids": ["b__b-2"]},
-              "logs": {"a__a-1": {"test_output.txt": AMB}}}  # fmt: skip
+    second = {
+        "report": {"error_ids": ["a__a-1"], "resolved_ids": ["b__b-2"]},
+        "logs": {"a__a-1": {"run_instance.log": run_log("a__a-1", AMB)}},
+    }
     _, camp, _ = run_fork(tmp_path, monkeypatch, [both, second], ids, "--regrade")
     assert outcomes(camp) == {"a__a-1": ("0", "ambiguous_repeated"), "b__b-2": ("1", "resolved")}
 
@@ -326,10 +340,11 @@ def test_k130_the_lite_path_should_not_make_ambiguous_final(tmp_path, monkeypatc
     assert rc == 1
 
 
-def test_k130_analysis_plan_should_state_the_rule():
+def test_k130_analysis_plan_should_state_both_rules():
     text = " ".join(str(v) for v in prereg.ANALYSIS_PLAN_A.values()).lower()
     assert "ambiguous_repeated" in text
-    assert "grader_infra" in text or "grader infrastructure" in text
+    assert "grader_infra_final" in text
+    assert "three" in text or "3" in text
 
 
 # ---- K131 grade with the pre-registered fork ----

@@ -265,7 +265,7 @@ def test_k106_run_a_without_digests_should_stop_before_the_matrix(tmp_path):
 # ---- K108 grading ----------------------------------------------------------------------------
 
 
-def grade_rig(tmp_path, *, grader=FORK, env=None):
+def grade_rig(tmp_path, *, grader=FORK, env=None, toml="a"):
     rig = make_rig(tmp_path)
     bindir, log = make_fake_bin(tmp_path)
     d = rig / "prereg" / "camp"
@@ -274,6 +274,11 @@ def grade_rig(tmp_path, *, grader=FORK, env=None):
         (d / "selection.json").write_text(json.dumps({"grader": grader}))
     (d / "dataset.json").write_text("[]")
     (d / "images.digests").write_text("")
+    if toml is not None:  # K136: fork grading needs the stage-a file; its [grader] is the truth
+        ns = (env or {}).get("HC_A_NAMESPACE") or NS
+        (d / "preregistration.toml").write_text(
+            f'stage = "{toml}"\n\n[grader]\ncommit = "{REF}"\nnamespace = "{ns}"\n'
+        )
     full = {"FAKE_UV_STUB_MODULES": "hcbench.grade", "HC_A_GRADER_REF": REF,
             "HC_A_NAMESPACE": NS, **(env or {})}  # fmt: skip
     r = run_script(rig, "20_grade.sh", ["camp"], bindir, full)
@@ -298,8 +303,8 @@ def test_k108_script_should_pass_the_fork_flags_to_grade(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "ref", ["", "e4907b7", REF.upper(), REF + "0", "g" * 40, "main", REF[:-1] + "Z"]
-)
+    "ref", ["e4907b7", REF.upper(), REF + "0", "g" * 40, "main", REF[:-1] + "Z"]
+)  # "" now means "unset", so the pre-registered commit is used (K131, K136)
 def test_k108_script_should_refuse_a_ref_that_is_not_40_lowercase_hex(tmp_path, ref):
     r, uv, _ = grade_rig(tmp_path, env={"HC_A_GRADER_REF": ref})
     assert r.returncode != 0
