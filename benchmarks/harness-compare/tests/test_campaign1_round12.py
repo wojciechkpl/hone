@@ -58,7 +58,18 @@ def test_k83_stage_cb_prereg_should_record_the_new_window(env):
 
 # ---- K84 ---------------------------------------------------------------------------------
 
-BAD_SPLITS = ["2026-03", "2026_13", "2026_00", "test", "26_03", "2026_3", "2026_031", "x2026_03"]
+BAD_SPLITS = [
+    "2026-03",
+    "2026_13",
+    "2026_00",
+    "test",
+    "26_03",
+    "2026_3",
+    "2026_031",
+    "x2026_03",
+    "2026_03\n",
+    " 2026_03",
+]
 
 
 @pytest.mark.parametrize("value", BAD_SPLITS)
@@ -68,7 +79,7 @@ def test_k84_prereg_bad_min_split_should_stop_naming_key_and_value(env, value):
     with pytest.raises(SystemExit) as exc:
         run_cb(env)
     assert "HC_A_MIN_SPLIT" in str(exc.value)
-    assert value in str(exc.value)
+    assert repr(value) in str(exc.value)
     assert not (env["tmp"] / "pre.toml").exists()
 
 
