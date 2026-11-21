@@ -398,7 +398,11 @@ def execute_run(
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
             # K151: a lost request log is an infrastructure error, beside any earlier
             # instrumentation_error, so the run is re-run and never graded.
-            result["infra_error"] = result["infra_error"] or f"records: {e}"
+            # K162: a suite C run (red team) keeps its evidence, so it stays fail-closed.
+            key = (
+                "instrumentation_error" if started and task.scenario is not None else "infra_error"
+            )
+            result[key] = result[key] or f"records: {e}"
         with (rdir / "proxy.jsonl").open("w") as fh:
             for rec in records:
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")

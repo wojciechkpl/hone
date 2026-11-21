@@ -100,7 +100,10 @@ def apply_outcomes(runs: list[dict], outcomes: Mapping[str, Mapping]) -> None:
         if run["suite"] != "a":
             continue
         o = outcomes.get(run["run_id"])
-        if o is None:
+        if run.get("infra_error"):  # K160: no grade survives an infrastructure error
+            run["resolved"] = None
+            run["grade_status"] = "stale" if o is not None else "ungraded"
+        elif o is None:
             run["resolved"] = None
             run["grade_status"] = "ungraded"
         elif not _row_fits_run(o["status"], run):
@@ -553,7 +556,7 @@ def _stage_a_mismatches(runs: list[dict], prereg: Mapping) -> list[dict]:
     arms, expected_tasks, want = _stage_a_expected(prereg)
     by_arm: dict[str, set] = defaultdict(set)
     for r in a_runs:
-        by_arm[r["arm"]].add(r["repeat"])
+        by_arm[r["arm"]].add(_repeat_of(r))
     for arm in sorted(by_arm):
         if want and sorted(by_arm[arm]) != want:
             out.append(
@@ -573,7 +576,7 @@ def _stage_a_mismatches(runs: list[dict], prereg: Mapping) -> list[dict]:
                 "found": f"{len(arms)} arms, {len(want)} repeats, {len(expected_tasks)} tasks",
             }
         )
-    have = {(r["arm"], r["task_id"], r["repeat"]): r for r in a_runs}
+    have = {(r["arm"], r["task_id"], _repeat_of(r)): r for r in a_runs}
     for arm, task, repeat in _expected_run_keys(arms, expected_tasks, want):
         r = have.get((arm, task, repeat))
         if r is None or r.get("infra_error"):
@@ -1069,7 +1072,6 @@ def _code_evidence(prereg: Mapping | None, invocations: list[Mapping] | None) ->
 
 def _stage_a_markdown(rows: list[dict], runs: list[dict], title: str, prereg: Mapping) -> str:
     """K110-K112, K141, K142: the suite A section under a stage-a pre-registration."""
-    n_run = len({r["task_id"] for r in rows if r["suite"] == "a"})
     dates = sorted(str(v)[:10] for v in (prereg.get("task_created_at") or {}).values())
     out = f"\n## {title}\n\n"
     if dates:
@@ -1078,8 +1080,17 @@ def _stage_a_markdown(rows: list[dict], runs: list[dict], title: str, prereg: Ma
             "the model may have seen these tasks or their fixes.\n\n"
         )
     arms, expected_tasks, repeats = _stage_a_expected(prereg)
-    a_runs = {(r["arm"], r["task_id"], r["repeat"]): r for r in runs if r["suite"] == "a"}
     keys = _expected_run_keys(arms, expected_tasks, repeats)
+    wanted = set(keys)
+    a_runs = {
+        k: r
+        for r in runs
+        if r["suite"] == "a" and (k := (r["arm"], r["task_id"], _repeat_of(r))) in wanted
+    }  # K158: only the expected runs
+    outside = sum(r["suite"] == "a" for r in runs) - len(a_runs)
+    inside = {r["run_id"] for r in a_runs.values()}
+    rows = [r for r in rows if r["suite"] != "a" or r["run_id"] in inside]
+    n_run = len({r["task_id"] for r in rows if r["suite"] == "a"})
     counts = (  # K153: each run counts once, in the first of these it fits
         ("missing", sum(k not in a_runs for k in keys)),
         ("pending re-run", sum(1 for k in keys if (a_runs.get(k) or {}).get("infra_error"))),
@@ -1093,10 +1104,17 @@ def _stage_a_markdown(rows: list[dict], runs: list[dict], title: str, prereg: Ma
         ),
     )
     parts = [f"{n} run{'s' if n != 1 else ''} {what}" for what, n in counts if n]
+    if not keys:  # K161
+        parts = ["no expected runs recorded"]
     pending = len(parts)
     final = f" — not final: {', '.join(parts)}" if parts else ""
     table, _ = suite_table(rows, "a", per_resolved=True)
     out += f"{table}\n_Tokens per resolved run: all judged runs' tokens ÷ resolved runs._\n\n"
+    if outside:  # K158
+        out += (
+            f"{outside} run{'s' if outside != 1 else ''} outside the pre-registration "
+            f"{'are' if outside != 1 else 'is'} left out.\n\n"
+        )
     out += f"### H1 — pass@1 (pre-registered){final}\n\n"
     out += pairwise_table(rows, "a", n_run, pending) + "\n"
     out += f"### H2 — tokens and wall seconds per task (pre-registered){final}\n\n"
@@ -1108,8 +1126,8 @@ def _stage_a_markdown(rows: list[dict], runs: list[dict], title: str, prereg: Ma
     }
     listed = [
         f"- {r['arm']}: {r['run_id']}: {r['grade_status']} ({notes[r['grade_status']]})"
-        for r in sorted(runs, key=lambda r: (r.get("arm") or "", r["run_id"]))
-        if r["suite"] == "a" and r.get("grade_status") in notes
+        for r in sorted(a_runs.values(), key=lambda r: (r.get("arm") or "", r["run_id"]))
+        if r.get("grade_status") in notes
     ]
     if listed:
         out += "### Unjudged, repeated-ambiguous and broken runs\n\n" + "\n".join(listed) + "\n"

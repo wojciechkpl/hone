@@ -633,7 +633,7 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     non-stage-`a` `preregistration.toml` with its own message.
   - *Gaps (K133).* The preflight and the final check compare the `HC_A_*` rule values unstripped.
 
-- **Round 16 to 16c (K110-K113, K141-K157).**
+- **Round 16 to 16d (K110-K113, K141-K162).**
   - *When (K148).* The stage-`a` report applies only when the pre-registration has `stage = "a"`
     and a `[rules_check]` table. An older SWE-bench Lite stage-`a` file gets the plain report
     ("Suite A", "### Pairwise", no stage-`a` conformance checks).
@@ -659,8 +659,18 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     with that error and no `infra_error`, any other row a run without one; otherwise the run is
     `stale`.
   - *Lost request log (K151).* When the proxy's records can't be read after a run, the run gets
-    `infra_error` ("records: ..."), beside any `instrumentation_error`, for every suite. It is
-    re-run by `--retry-errors` and never graded.
+    `infra_error` ("records: ..."), beside any `instrumentation_error`, for every suite with no red-team
+    scenario. It is re-run by `--retry-errors` and never graded. A suite C run whose records are
+    lost after the harness started stays an `instrumentation_error` (K162): the outcome is
+    unknown and the evidence is kept.
+  - *Only the pre-registered runs (K158, K159, K160, K161).* Under a stage-`a` pre-registration
+    the suite A table, H1, H2, the claim line's n and the K153 counts use only the expected runs
+    (K152), reading each run's repeat through `_repeat_of`. Any other suite A run stays a
+    mismatch and is counted in a line under the suite A table ("N runs outside the
+    pre-registration are left out."). A run with an `infra_error` never takes a grade from
+    `outcomes.csv`: `stale` with a row, `ungraded` without. A file that expects nothing gives
+    "not final: no expected runs recorded". The list of unjudged, repeated-ambiguous and broken
+    runs names expected runs only, since it says how each run was counted.
   - *Not final (K147, K153).* A stage-`a` report is not final while an expected run is missing,
     has an `infra_error`, or is pending grading. The H1 and H2 headings say "not final: N runs
     missing, N runs pending re-run, N runs pending grading" (non-zero parts only), no claim

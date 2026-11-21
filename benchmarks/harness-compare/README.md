@@ -234,7 +234,9 @@ apply failure stays an apply failure, and an error with no block stays `error`.
   graded. `hcbench.grade` writes it as `instrumentation_error`, resolved 0, even when nothing
   else can be graded. It does so on the SWE-bench Lite path too, so an older campaign's plain
   report counts such runs as unresolved after a re-grade. A run whose request log can't be read
-  is an infrastructure error and is re-run with `--retry-errors`.
+  is an infrastructure error and is re-run with `--retry-errors`, except in suite C, where it
+  stays an `instrumentation_error` (re-running would delete the run's evidence). A run with an
+  infrastructure error keeps no grade until it is re-run.
 
 Suite A results are reported as possibly contaminated (see **Suite A rules** above).
 **Report.** `make report CAMPAIGN=c1-a` (with `HC_PREREG` pointing at `prereg/c1-a`) writes
@@ -247,12 +249,17 @@ no judged run for them. The `family` column of H1 and H2 says whether a row is i
 or outside it.
 
 The report lists the `grader_infra_final` runs as unjudged, the `ambiguous_repeated` runs, and
-the runs with an `instrumentation_error` per arm (they count as unresolved and are not graded).
+the runs with an `instrumentation_error` per arm (they count as unresolved and are not graded),
+for the expected runs only.
 It exits with the conformance code if a run the stage-`a` file expects (every arm in
 `HC_ARMS_MAIN`, every task, every repeat) is missing or has an infrastructure error, if a run is
 still waiting for a grade, or if the tasks, images, arms or repeats differ from the file. While
 runs are missing, waiting for a re-run or waiting for grading, the H1 and H2 headings say "not
-final" with the counts, no claim lines are written, and the family rows read "not final".
+final" with the counts, no claim lines are written, and the family rows read "not final". So
+does a stage-`a` file that records no arms, repeats or task images ("no expected runs
+recorded"). The suite A table, H1 and H2 use only the expected runs. A run of an arm, task or
+repeat the file doesn't list is left out, still a mismatch, and a line under the suite A table
+counts it.
 
 ## Day-to-day
 
