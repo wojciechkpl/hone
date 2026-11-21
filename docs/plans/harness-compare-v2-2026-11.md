@@ -1552,6 +1552,69 @@ empty heading stay as published, and they affect every arm the same way.
     `run_digest`, which is the digest of `tasks.txt`.
   - Only the image is inspected, never a run outcome, so this is decided before any run.
 
+#### Round 14b: from the review of round 14 (K114–K123)
+
+The review of round 14 found the frozen selection rules implemented exactly, and stage
+`cb`'s recorded content unchanged. These items close what it found.
+
+- **K114 The pre-registered suite A cut.**
+  - The stage-`cb` file's `cut_order` lists `suite A tasks 60 -> 40`.
+  - K97 accepts `n = 40` in place of the recorded `n = 60` only when that exact entry is in
+    the stage-`cb` `cut_order`. The stage-`a` file then records
+    `[rules_check] cut = "suite A tasks 60 -> 40"`.
+  - Any other `n` is still refused, and `--accept-diff` can't let it through.
+  - The 40-task draw is a subset of the 60-task draw (§11.15 K86), so the cut keeps the
+    same repositories' tasks.
+- **K115 A Docker failure is not a bad image.**
+  - In `check-images`, a `docker run` exit code of 125 is Docker's own error (for example a
+    stopped daemon, a full disk or a failed pull). It stops the check with a message that
+    names the task, writes nothing, and the whole check is run again.
+  - Exit codes 126 and 127, and failures inside the container, still exclude the task.
+  - Exclusions are final and go into the tagged file, so an infrastructure problem must
+    never cause one (K101).
+- **K116 No stage-`a` file without a finished image check.** A non-draft stage `a` refuses
+  unless all of these hold:
+  - `images.check.json` exists;
+  - `selection.json` has `run_digest`, and it equals `manifest_digest` of `tasks.txt`;
+  - no task in `tasks.txt` is in `excluded`;
+  - `manifest_digest` of `tasks.txt` together with `excluded` equals `digest`, the drawn
+    list.
+- **K117 The rules are checked before any work.**
+  - `python -m hcbench.prereg --stage a --rules <file> --preflight` runs every K97 and K114
+    check that doesn't need a selection:
+    - the rules file;
+    - the environment's `HC_A_*` and `HC_SELECTION_SEED` against `[suite_a_rules]`;
+    - `[config]`, the bundle and the K120 files against the stage-`cb` file.
+  - It honours `--accept-diff` and writes nothing.
+  - `scripts/05_preregister.sh` keeps the `--rules` path and runs the preflight before it
+    creates the directory, selects, or pulls anything.
+- **K118 Stage `cb` unchanged, byte for byte.** A stage-`cb` file from this branch equals
+  one from `fa5ee18` for the same inputs, including the order of its tables (`[bundle]`
+  after `[files_sha256]`).
+- **K119 Every check result kept.** A re-run of `check-images` merges its results into
+  `images.check.json`, so a task excluded earlier keeps its recorded result.
+- **K120 The same arms and images as stage `cb`.** Every `files_sha256` key that both files
+  record (`arms.toml` and the Dockerfiles among them) must have the same hash. A
+  difference is refused unless `--accept-diff files_sha256.<key>` names it, and it is then
+  recorded like a K97 difference.
+- **K121 The selection's environment.**
+  - `resolve_revision` returns `None` on any exception, not only `OSError`.
+  - `selection.json` records `datasets_version` and `huggingface_hub_version`.
+  - `splits` lists every eligible split name at the revision, as K95 says, whether or not
+    it contributed a task.
+- **K122 Small fixes.**
+  - A stage-`cb` `[config]` key missing from the environment is compared and recorded as
+    `""`, never `"None"`.
+  - `dataset.json` rows carry no `split` field.
+  - The README shows the direct `scripts/05_preregister.sh c1-a --stage a --rules …
+    --accept-diff KEY` call for the cases `make prereg` doesn't pass through.
+- **K123 Tests that kill the surviving mutants:**
+  - a re-run keeps earlier exclusions and their results;
+  - every task excluded stops the check;
+  - `check-images` refuses a `MISSING` or tagged line;
+  - a digest line with trailing text is refused (a full match, not a prefix match);
+  - a non-zero exit is excluded with a reason that names the exit code.
+
 #### Round 15: runs and grading (K105–K109)
 
 - **K105 The task environment.** A suite A task whose image starts with `swerebench/` runs
