@@ -111,8 +111,12 @@ ANALYSIS_PLAN_A = {
     "Otherwise the report says no detectable difference at n=<tasks run>, with the confidence "
     "interval.",
     "exclusions": "A task whose image fails the image check is excluded before any run, listed, "
-    "and not replaced. Runs with infrastructure errors are re-run, and grader infrastructure "
-    "errors are re-graded. Nothing else is excluded.",
+    "and not replaced. Runs with infrastructure errors are re-run. Grader infrastructure errors "
+    "(status grader_infra, found from the fork's logs) are re-graded until they clear. A result "
+    "that is ambiguous (a missing module, no tests collected, a test timeout) is re-graded; one "
+    "that is ambiguous on its first grade and on every re-grade, over at least two attempts, is "
+    "final as ambiguous_repeated and counts as unresolved, and the report lists each. Nothing "
+    "else is excluded.",
     "contamination": "Suite A results are labelled possibly contaminated (see suite_a_rules in "
     "the stage cb pre-registration).",
     "arms": "Every arm in HC_ARMS_MAIN runs every task at the repeats in HC_A_REPEATS.",
@@ -505,7 +509,7 @@ def check_rules_env(env: dict[str, str], cb: dict[str, Any]) -> str | None:
     rules = cb.get("suite_a_rules", {})
     cut = None
     for env_key, _, rule_key in RULE_FIELDS:
-        have, want = str(env.get(env_key, "")).strip(), rules.get(rule_key)
+        have, want = str(env.get(env_key, "")), rules.get(rule_key)  # unstripped (K133)
         if have == str(want):
             continue
         entry, recorded, cut_n = CUT_N

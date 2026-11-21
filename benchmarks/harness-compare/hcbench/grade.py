@@ -13,6 +13,7 @@ Status → resolved:
   unresolved | empty_patch                  0
   apply_failed | error (tests errored/timed out, patch-caused)   0
   grader_infra | ambiguous | missing        blank → re-grade (exit 1)
+  ambiguous_repeated (fork mode: ambiguous on every attempt, at least two)   0
 """
 
 from __future__ import annotations
@@ -20,7 +21,9 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import importlib.metadata
 import json
+import re
 import subprocess
 import sys
 from collections import defaultdict
@@ -30,6 +33,44 @@ from .suites import parse_digests
 
 APPLY_PATCH_FAIL = ">>>>> Patch Apply Failed"
 REGRADE = {"grader_infra", "ambiguous", "missing"}
+
+# Fork mode (K129): the fork (swebench 4.0.3) has no infrastructure classifier, so its logs are
+# classified here. The signature table below, from `INFRA_FAILURE_SIGNATURES` in swebench 5.0.2
+# (swebench/harness/infra_failure.py, MIT licence, (c) the SWE-bench authors), is ported in the
+# same order and tiers. The first three entries are written only by the fork.
+TIER_ENVIRONMENT = "environment"  # cannot plausibly be caused by the patch
+TIER_AMBIGUOUS = "ambiguous"  # a broken environment or a bad patch
+INFRA_FAILURE_SIGNATURES: tuple[tuple[str, str, str], ...] = (
+    (
+        "image_unavailable",
+        TIER_ENVIRONMENT,
+        r"Error building image|Error occurred while pulling image",
+    ),
+    ("container_create_failed", TIER_ENVIRONMENT, r"Error creating container"),
+    ("docker_api_timeout", TIER_ENVIRONMENT, r"Read timed out|UnixHTTPConnectionPool"),
+    ("browser_launch_failed", TIER_ENVIRONMENT, r"Failed to launch|Failed to connect to the bus"),
+    (
+        "display_unavailable",
+        TIER_ENVIRONMENT,
+        r"cannot open display|Missing X server|unable to open X display",
+    ),
+    ("out_of_memory", TIER_ENVIRONMENT, r"Cannot allocate memory|OutOfMemoryError|^Killed$"),
+    (
+        "container_unavailable",
+        TIER_ENVIRONMENT,
+        r"Error response from daemon|Cannot connect to the Docker daemon",
+    ),
+    (
+        "network_unreachable",
+        TIER_ENVIRONMENT,
+        r"Could not resolve host|Temporary failure in name resolution",
+    ),
+    ("missing_module", TIER_AMBIGUOUS, r"Cannot find module|MODULE_NOT_FOUND|ModuleNotFoundError"),
+    ("no_tests_collected", TIER_AMBIGUOUS, r"no tests ran|collected 0 items"),
+    ("tests_timed_out", TIER_AMBIGUOUS, r"Timeout error: \d+ seconds exceeded"),
+)
+_COMPILED = tuple((r, t, re.compile(p, re.MULTILINE)) for r, t, p in INFRA_FAILURE_SIGNATURES)
+FORK_LOGS = ("run_instance.log", "test_output.txt")
 
 
 def collect(campaign: Path) -> dict[tuple[str, int], list[dict]]:
@@ -111,10 +152,46 @@ def write_pinned_dataset(args, gdir: Path) -> Path:
         "repo": args.grader_repo,
         "commit": args.grader_commit,
         "namespace": args.namespace,
+        "swebench_version": package_version("swebench"),
+        "docker_version": package_version("docker"),
         "dataset_sha256": hashlib.sha256(out.read_bytes()).hexdigest(),
     }
     (gdir / "grader.json").write_text(json.dumps(record, indent=1) + "\n")
     return out
+
+
+def _fork_log_text(rdir: Path, swe_run_id: str, iid: str) -> str:
+    chunks = []
+    for name in FORK_LOGS:
+        for log in sorted(rdir.glob(f"logs/run_evaluation/{swe_run_id}/*/{iid}/{name}")):
+            try:
+                chunks.append(log.read_text(errors="replace"))
+            except OSError:
+                continue
+    return "\n".join(chunks)
+
+
+def fork_status_for(iid: str, report: dict, rdir: Path, swe_run_id: str) -> str:
+    """K129: status_for, then the fork's failures are told apart from the patch's by its logs.
+    An apply failure keeps precedence; the first signature that matches decides the tier."""
+    status = status_for(iid, report, rdir, swe_run_id)
+    if status not in ("unresolved", "error"):
+        return status
+    text = _fork_log_text(rdir, swe_run_id, iid)
+    if APPLY_PATCH_FAIL in text:
+        return "apply_failed"
+    for _, tier, pattern in _COMPILED:
+        if pattern.search(text):
+            return "grader_infra" if tier == TIER_ENVIRONMENT else "ambiguous"
+    return status
+
+
+def package_version(name: str) -> str:
+    """The installed version of a package, as the grading environment sees it (K132)."""
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return ""
 
 
 def evaluate(args, pred_path: Path, out_dir: Path, run_id: str, ids: list[str]) -> dict | None:
@@ -137,14 +214,19 @@ def evaluate(args, pred_path: Path, out_dir: Path, run_id: str, ids: list[str]) 
     return read_report(out_dir)
 
 
-def latest_status(iid: str, attempts: list[tuple[dict, Path, str]]) -> str:
-    """Later attempts (re-grades) override earlier ones for the instances they cover."""
-    status = "missing"
-    for report, d, rid in attempts:
-        s = status_for(iid, report, d, rid)
-        if s != "missing":
-            status = s
-    return status
+def latest_status(iid: str, attempts: list[tuple[dict, Path, str]], fork: bool = False) -> str:
+    """Later attempts (re-grades) override earlier ones for the instances they cover.
+
+    Fork mode (K130): an instance that is ambiguous on its first grade and on every re-grade,
+    over at least two attempts, is final as ``ambiguous_repeated`` and counts as unresolved.
+    ``grader_infra`` never becomes final."""
+    judge = fork_status_for if fork else status_for
+    seen = [s for s in (judge(iid, r, d, rid) for r, d, rid in attempts) if s != "missing"]
+    if not seen:
+        return "missing"
+    if fork and len(seen) >= 2 and all(s == "ambiguous" for s in seen):
+        return "ambiguous_repeated"
+    return seen[-1]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -174,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     if not groups:
         raise SystemExit(f"no finished suite-a runs under {args.campaign}/a")
     gdir = args.campaign / "grading"
+    fork = bool(args.image_digests)
     if args.image_digests:
         args.pinned_dataset = write_pinned_dataset(args, gdir)
     gdir.mkdir(parents=True, exist_ok=True)
@@ -211,7 +294,9 @@ def main(argv: list[str] | None = None) -> int:
             if rep is not None:
                 attempts.append((rep, retry, f"{swe_run_id}.{retry.name}"))
         pending = [
-            p["instance_id"] for p in preds if latest_status(p["instance_id"], attempts) in REGRADE
+            p["instance_id"]
+            for p in preds
+            if latest_status(p["instance_id"], attempts, fork) in REGRADE
         ]
         if pending and args.regrade:
             n = len(attempts)
@@ -222,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
                 attempts.append((rep, retry_dir, f"{swe_run_id}.retry{n}"))
         tally: dict[str, int] = defaultdict(int)
         for p in preds:
-            status = latest_status(p["instance_id"], attempts)
+            status = latest_status(p["instance_id"], attempts, fork)
             tally[status] += 1
             rows.append(
                 {

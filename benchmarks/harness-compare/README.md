@@ -207,12 +207,25 @@ a task with no pinned image stops the run before any container starts. A task wh
 starts with `swerebench/` runs with the `testbed` env first on its `PATH`.
 
 **Grading.** When `prereg/c1-a/selection.json` names `SWE-rebench/SWE-bench-fork` as grader,
-`scripts/20_grade.sh` installs the fork at `HC_A_GRADER_REF` (it refuses a ref that isn't 40
-lowercase hex characters) and grades on the pinned images with `HC_A_NAMESPACE` and
-`--cache_level instance`. `hcbench.grade` writes `grading/dataset.pinned.json` (the chosen rows
-with `image_name` and `docker_image` set to the pinned reference) and `grading/grader.json`
-(the fork's repository, commit, namespace and the dataset file's sha256). Any other grader
-keeps `swebench==5.0.2`.
+`scripts/20_grade.sh` takes the fork commit and namespace from the `[grader]` table of
+`prereg/c1-a/preregistration.toml`. If `HC_A_GRADER_REF` or `HC_A_NAMESPACE` is set and
+differs, it stops and names both values. It installs the fork at that commit and grades on the
+pinned images with `--cache_level instance`. `hcbench.grade` writes `grading/dataset.pinned.json`
+(the chosen rows with `image_name` and `docker_image` set to the pinned reference) and
+`grading/grader.json` (the fork's repository, commit, namespace, the installed `swebench` and
+`docker` versions, and the dataset file's sha256). Any other grader keeps `swebench==5.0.2`.
+
+The fork can't tell a broken grading environment from a failed patch, so `hcbench.grade`
+reads each unresolved or errored instance's `run_instance.log` and `test_output.txt` and
+classifies them with swebench 5.0.2's signatures plus three the fork writes (a failed image
+pull or build, a container that can't be created, a Docker API timeout). An apply failure
+stays an apply failure.
+- `grader_infra` (the environment broke) and `ambiguous` (a missing module, no tests collected,
+  a test timeout) have a blank `resolved` in `outcomes.csv`. Run `scripts/20_grade.sh c1-a
+  --regrade` until none is left.
+- An instance that is `ambiguous` on its first grade and on every re-grade, over at least two
+  attempts, is final as `ambiguous_repeated` and counts as unresolved.
+- `grader_infra` never becomes final.
 
 Suite A results are reported as possibly contaminated (see **Suite A rules** above).
 The stage-`a` report follows in a later change.

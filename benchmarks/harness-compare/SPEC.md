@@ -598,6 +598,27 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     `--accept-diff` value, and the preflight and the final check compare the same stripped
     values.
 
+- **Round 15b (K129-K133).**
+  - *Classification (K129).* In fork mode `hcbench.grade` reads `run_instance.log` and
+    `test_output.txt` of each instance in `unresolved_ids` or `error_ids`, under
+    `logs/run_evaluation/<run_id>/<model>/<instance>/`. The signatures are swebench 5.0.2's
+    `INFRA_FAILURE_SIGNATURES` (MIT, credited in a comment), same order and tiers, with three
+    fork-only environment signatures first (`image_unavailable`, `container_create_failed`,
+    `docker_api_timeout`). `>>>>> Patch Apply Failed` keeps precedence (`apply_failed`); an
+    environment-tier match is `grader_infra`, an ambiguous-tier match is `ambiguous`, no match
+    keeps `unresolved` or `error`. The Lite path is unchanged.
+  - *Final rule (K130).* `grader_infra` and `ambiguous` are re-graded. An instance that is
+    `ambiguous` on its first grade and on every re-grade, over at least two attempts, is
+    `ambiguous_repeated` with `resolved = 0`. `grader_infra` never becomes final.
+    `ANALYSIS_PLAN_A`'s exclusions text says so.
+  - *Pre-registered fork (K131).* `scripts/20_grade.sh` takes the commit and namespace from the
+    `[grader]` table of `prereg/<name>/preregistration.toml`; a differing, set `HC_A_GRADER_REF`
+    or `HC_A_NAMESPACE` stops it, naming both values. Without that file it falls back to the
+    environment values.
+  - *Versions (K132).* `grading/grader.json` also has `swebench_version` and `docker_version`
+    (`grade.package_version`, `importlib.metadata`).
+  - *Gaps (K133).* The preflight and the final check compare the `HC_A_*` rule values unstripped.
+
 ### Campaign 1, round 2 (K18-K29)
 
 Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
