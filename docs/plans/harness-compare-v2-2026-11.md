@@ -2005,7 +2005,12 @@ review of this round added K165.
 
 **Not checked off the GPU box.** The image check, the runs and the fork's grading need
 Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
-the image check, then one task on one arm, then grades it, then a `make report` dry run.
+the image check, then the first task once on each of the four `HC_ARMS_MAIN` arms, then
+grades those four runs, then a `make report` dry run. Four arms, not one: each harness is
+checked on a SWE-rebench image while a fix is still free. The four runs go into their own
+campaign folder and are not results. The hashes of the stage-`a` files are recorded before
+the rehearsal and checked before the commit, and the commit message of the tag names the
+rehearsal.
 
 ## Sources
 
