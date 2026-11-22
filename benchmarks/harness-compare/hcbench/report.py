@@ -1281,7 +1281,7 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
             "grader infra failures; run `scripts/20_grade.sh <campaign> --regrade`."
         )
     n_a = len({r["task_id"] for r in rows if r["suite"] == "a"})
-    if n_a and n_a < 40:
+    if n_a and n_a < 40 and not stage_a:  # K163
         caveats.append(f"Suite A has {n_a} tasks; the pre-registered size is 40.")
     if caveats:
         md.append("\n## Caveats\n\n" + "\n".join(f"- {c}" for c in caveats) + "\n")

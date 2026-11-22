@@ -44,7 +44,7 @@ if docker info >/dev/null 2>&1; then
   free_gb="$(df -BG --output=avail "${root}" 2>/dev/null | tail -1 | tr -dc 0-9)"
   if [[ -n "${free_gb}" ]]; then
     (( free_gb >= 200 )) && pass "${free_gb} GB free at ${root}" \
-      || fail "${free_gb} GB free at ${root}; need ≥ 200 GB (40 SWE-bench images + model + logs)"
+      || fail "${free_gb} GB free at ${root}; need ≥ 200 GB (suite A task images + model + logs)"
   fi
   seccomp="$(docker info --format '{{.SecurityOptions}}')"
   [[ "${seccomp}" == *seccomp* ]] && note "default seccomp active — smoke step 04 checks Landlock inside containers" || pass "no seccomp"

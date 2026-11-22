@@ -1985,9 +1985,10 @@ can't change after the stage-`a` tag, so they land now.
   would delete that evidence. Before the harness starts it is an `infra_error`, as before.
   This replaces "every suite" in K151.
 
-#### Round 16e: from the review of round 16d (K163–K164)
+#### Round 16e: from the review of round 16d (K163–K165)
 
-The review of round 16d approved it. Two loose ends remain, one of them in report code.
+The review of round 16d approved it. Two loose ends remain, one of them in report code. The
+review of this round added K165.
 
 - **K163 No SWE-bench Lite size caveat under stage `a`.** The report's caveat "Suite A has
   N tasks; the pre-registered size is 40." dates from SWE-bench Lite. Under a stage-`a`
@@ -1997,6 +1998,10 @@ The review of round 16d approved it. Two loose ends remain, one of them in repor
   - A test pins that the "left out" count of K158 counts suite A runs only (the mutant
     that survived the review of round 16d).
   - SPEC says that K160 holds for every suite A report, the plain one too.
+- **K165 Preflight wording.** The disk check in `scripts/00_preflight.sh` fails with "need
+  ≥ 200 GB (suite A task images + model + logs)". The old text said "40 SWE-bench images",
+  and stage `a` pulls up to 60 SWE-rebench images. Only the message changes: the 200 GB
+  floor stays, and no test reads the text.
 
 **Not checked off the GPU box.** The image check, the runs and the fork's grading need
 Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs

@@ -11,9 +11,10 @@ hc-llm (vLLM) ◀── hc-proxy (metering, forced sampling, caps, records) ◀�
 ```
 
 - **Suites**
-  - **A**: SWE-bench Lite, 40 tasks (pre-registered, stratified by repo, official grader).
-    It is retired as the headline suite: stage 2 of campaign 1 replaces it with SWE-rebench
-    once the loader lands (design §10.3, §11 and §11.15)
+  - **A**: SWE-rebench, 60 tasks from split `2026_03` and later, one per repository
+    (pre-registered rules, the SWE-rebench grading fork, reported as possibly contaminated).
+    It runs as stage 2 of campaign 1 (design §10.3, §11.15 and §11.17). The older SWE-bench
+    Lite path (40 tasks, official grader) is retired as the headline suite; its code stays.
   - **B**: the 10-task mini-bench (graded by check commands; never part of the headline)
   - **C**: red team, 20 risky calls + 5 planted injections, judged by tripwires
 - **Arms** (`config/arms.toml`): `pi`, `hone-noinject`, `hone-inject`, `hermes`, plus

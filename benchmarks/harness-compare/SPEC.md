@@ -633,7 +633,7 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     non-stage-`a` `preregistration.toml` with its own message.
   - *Gaps (K133).* The preflight and the final check compare the `HC_A_*` rule values unstripped.
 
-- **Round 16 to 16d (K110-K113, K141-K162).**
+- **Round 16 to 16e (K110-K113, K141-K165).**
   - *When (K148).* The stage-`a` report applies only when the pre-registration has `stage = "a"`
     and a `[rules_check]` table. An older SWE-bench Lite stage-`a` file gets the plain report
     ("Suite A", "### Pairwise", no stage-`a` conformance checks).
@@ -663,14 +663,20 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
     scenario. It is re-run by `--retry-errors` and never graded. A suite C run whose records are
     lost after the harness started stays an `instrumentation_error` (K162): the outcome is
     unknown and the evidence is kept.
-  - *Only the pre-registered runs (K158, K159, K160, K161).* Under a stage-`a` pre-registration
-    the suite A table, H1, H2, the claim line's n and the K153 counts use only the expected runs
-    (K152), reading each run's repeat through `_repeat_of`. Any other suite A run stays a
-    mismatch and is counted in a line under the suite A table ("N runs outside the
-    pre-registration are left out."). A run with an `infra_error` never takes a grade from
-    `outcomes.csv`: `stale` with a row, `ungraded` without. A file that expects nothing gives
-    "not final: no expected runs recorded". The list of unjudged, repeated-ambiguous and broken
-    runs names expected runs only, since it says how each run was counted.
+  - *Only the pre-registered runs (K158, K159, K160, K161, K163).* Under a stage-`a`
+    pre-registration the suite A table, H1, H2, the claim line's n and the K153 counts use only
+    the expected runs (K152), reading each run's repeat through `_repeat_of`. Any other suite A
+    run stays a mismatch and is counted in a line under the suite A table ("N runs outside the
+    pre-registration are left out."). The caveat "Suite A has N tasks; the pre-registered size
+    is 40." is not written (K163); the plain report and an older stage-`a` file keep it. A file
+    that expects nothing gives "not final: no expected runs recorded". The list of unjudged,
+    repeated-ambiguous and broken runs names expected runs only, since it says how each run was
+    counted.
+  - *No grade for a run with an infrastructure error (K160).* This holds for every suite A
+    report, the plain one too. A run with an `infra_error` never takes a grade from
+    `outcomes.csv`: it is `stale` with a row and `ungraded` without.
+  - *Preflight wording (K165).* The disk check's failure message says "suite A task images",
+    not "40 SWE-bench images". The 200 GB floor is unchanged.
   - *Not final (K147, K153).* A stage-`a` report is not final while an expected run is missing,
     has an `infra_error`, or is pending grading. The H1 and H2 headings say "not final: N runs
     missing, N runs pending re-run, N runs pending grading" (non-zero parts only), no claim
