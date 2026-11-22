@@ -176,7 +176,7 @@ def test_k151_grade_should_skip_a_run_whose_records_were_lost(tmp_path, monkeypa
 
 
 def test_k151_retry_errors_should_re_run_a_run_whose_records_were_lost(tmp_path, monkeypatch):
-    first, out = one_run(tmp_path, monkeypatch)
+    first, _ = one_run(tmp_path, monkeypatch)
     assert first["infra_error"]
     again, _ = one_run(tmp_path, monkeypatch, http=FakeHttp(), retry_errors=True)
     assert not again.get("skipped")
