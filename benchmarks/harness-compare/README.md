@@ -182,7 +182,9 @@ in order:
    is run again.
 4. `hcbench.prereg --stage a`.
 
-`HC_SKIP_PULL=1` is accepted only with `--draft`. The images are large (1.4 to 2.1 GB each).
+`HC_SKIP_PULL=1` is accepted only with `--draft`. The images are large: 1.2 to 4.3 GB each
+compressed, about 35 GB to download for 60 because they share a base, and about 75 to 110 GB
+on disk depending on Docker's image store (measured 2026-11-22; design §11.17).
 
 `hcbench.prereg --stage a --rules <stage-cb file>` refuses when:
 - the file is missing, not stage `cb`, or a draft;

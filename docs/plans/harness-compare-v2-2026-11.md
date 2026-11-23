@@ -1407,9 +1407,15 @@ flowchart TD
     `error_ids` and `incomplete_ids`.
   - A patch that doesn't apply logs `>>>>> Patch Apply Failed` and lands in `error_ids`.
   - The README runs the leaderboard with `--namespace swerebench --cache_level instance`.
-- **Task images** (two checked through the registry API):
-  - Each is a single `linux/amd64` manifest of 1.4 to 2.1 GB compressed. The first six
-    layers, about 1.05 GB, are shared.
+- **Task images** (two checked through the registry API; sizes re-measured on 2026-11-22):
+  - Each is a single `linux/amd64` manifest. The 60 drawn images are 1.24 to 4.27 GB
+    compressed (median 1.5 GB, 97 GB in total, from the Docker Hub listing). The first six
+    layers, about 1.05 GB, are shared, so the download is about 35 GB if all 60 share them
+    (three were checked).
+  - Unpacked, the one layer that differs is about 2.1 times its compressed size (three
+    images: 0.37 → 0.89 GB, 0.66 → 1.22 GB, 3.22 → 7.01 GB). That gives about 75 GB on disk
+    for the 60 images with Docker's classic image store and about 110 GB with the containerd
+    image store, which keeps the compressed layers too.
   - `WorkingDir` is `/testbed`, and the image runs as root.
   - Conda lives in `/opt/conda`, not `/opt/miniconda3`, and the `testbed` env has Python
     3.13.
@@ -2003,8 +2009,28 @@ review of this round added K165.
   and stage `a` pulls up to 60 SWE-rebench images. Only the message changes: the 200 GB
   floor stays, and no test reads the text.
 
-**Not checked off the GPU box.** The image check, the runs and the fork's grading need
-Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
+**Checked on real images, 2026-11-22.** On a Mac under amd64 emulation, with the mock
+model server and scratch folders outside the rig:
+
+- `rebench select` on the live dataset (revision `34d5a588`) drew 60 of 110 eligible tasks,
+  digest `2a647e44…`, the same as on 2026-11-20.
+- `rebench check-images` passed on three pulled and pinned images (keras, pandas, reframe):
+  HEAD was the base commit, the tree was clean, and the testbed-first `PATH` (K105) found
+  the `testbed` Python 3.13.13, where the image's own `PATH` finds the base env's 3.12.4.
+- One suite A run on the pinned reframe image with the `selftest` arm finished with no
+  error and recorded the base commit. A scratch arm that edited a tracked file and added a
+  new one gave a `patch.diff` holding both.
+- The fork at `e4907b7a` (swebench 4.0.3) graded hand-made patches for that task as
+  expected: the dataset's own patch `resolved`, an empty patch `empty_patch`, a patch that
+  can't apply `apply_failed` (the fork's log line is `<time> - INFO - >>>>> Patch Apply
+  Failed:`, the form K143 expects), a patch that fixes nothing `unresolved`. The two runs
+  above graded `empty_patch` and `unresolved`.
+- Seen on the way: the grading folders are named by the upstream seed (`pi.s20261117`),
+  not by the repeat. `outcomes.csv` is keyed by run id, so nothing depends on the name.
+
+**Not checked off the GPU box.** Pi, Hone and Hermes have not run on a SWE-rebench image,
+the other 57 images have not been pulled, and no stage-`a` pre-registration has been
+written from a real stage-`cb` file. Before the stage-`a` tag, the runbook runs
 the image check, then the first task once on each of the four `HC_ARMS_MAIN` arms, then
 grades those four runs, then a `make report` dry run. Four arms, not one: each harness is
 checked on a SWE-rebench image while a fix is still free. The four runs go into their own
