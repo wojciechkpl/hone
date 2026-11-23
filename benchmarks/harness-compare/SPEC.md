@@ -483,8 +483,8 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §2, §4.1, §4.4, §4.5.
   unpinned image and installs nothing. It runs as `linux/amd64` and links OpenSSL and zlib
   statically, because the task images have only OpenSSL 3. After the build, `readelf -d` runs
   in the same image, and `hcbench.bundle check-needed` accepts only nine `NEEDED` names:
-  glibc's libraries, the x86-64 loader and `libgcc_s.so.1`. On a failure the build removes
-  `bin/hone` and leaves no manifest. The build passes `HONE_BUILD_GIT_SHA` and
+  glibc's libraries, the x86-64 loader and `libgcc_s.so.1`. When the build, `readelf` or the
+  check fails, the script removes `bin/hone`; any failure leaves no manifest. The build passes `HONE_BUILD_GIT_SHA` and
   `HONE_BUILD_GIT_DATE`, so `bin/hone --version` prints the commit and its committer date.
   The pre-registration doesn't check Hone's part of the bundle.
 - **Smoke probes:** `suites/smoke.toml` has one task per probe, id `p-h1-…` to `p-h7-…`.
