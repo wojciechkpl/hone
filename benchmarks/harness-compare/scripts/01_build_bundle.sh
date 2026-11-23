@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Step P1.2 — build the read-only harness bundle mounted at /opt/harness:
-#   bin/hone            Hone at ${HC_HONE_REF}, built in a clean worktree, glibc ≤ 2.31
+#   bin/hone            Hone at ${HC_HONE_REF}, built in a clean worktree, glibc ≤ 2.31; the build installs nothing (full pinned HC_RUST_IMAGE), links OpenSSL statically, checks the NEEDED list and passes the commit
 #   node/ + pi/         Node ${HC_NODE_VERSION} (official tarball) + Pi ${HC_PI_VERSION}
 #                       (@earendil-works/pi-coding-agent, installed with --ignore-scripts)
 #   pi-ext/             Pi's example guardrail extensions, from the installed package
@@ -52,24 +52,49 @@ fi
 rm -f "${B}/manifest.json"
 
 # ---------------------------------------------------------------- Hone
+# Bundle helpers (Hone's NEEDED check K168, Pi's build steps K65-K67) live in hcbench.bundle.
+hc_bundle() { PYTHONPATH="${HC_ROOT}" python3 -m hcbench.bundle "$@"; }
 hone_sha=""
 if (( ! skip_hone )); then
+  # The image must be a digest pin; nothing is installed in it (K166).
+  [[ "${HC_RUST_IMAGE:-}" =~ @sha256:[0-9a-f]{64}$ ]] \
+    || die "HC_RUST_IMAGE must be pinned by digest (<name>:<tag>@sha256:<64 lowercase hex>), got '${HC_RUST_IMAGE:-}'; see config/bench.env.example"
   hone_sha="$(git -C "${REPO_ROOT}" rev-parse "${HC_HONE_REF}^{commit}")"
+  hone_date="$(git -C "${REPO_ROOT}" show -s --format=%cs "${hone_sha}")"
   wt="${HC_ROOT}/.build/hone-src"
   rm -rf "${wt}"; git -C "${REPO_ROOT}" worktree prune
   git -C "${REPO_ROOT}" worktree add --detach "${wt}" "${hone_sha}" >/dev/null
   trap 'git -C "${REPO_ROOT}" worktree remove --force "${wt}" >/dev/null 2>&1 || true' EXIT
   log "building hone ${hone_sha:0:12} in ${HC_RUST_IMAGE} (target dir in docker volume hc-cargo-target)"
-  docker run --rm \
+  rm -f "${B}/bin/hone"
+  docker run --rm --platform linux/amd64 \
     -v "${wt}:/src:ro" -v hc-cargo-target:/target -v hc-cargo-registry:/usr/local/cargo/registry \
     -v "${B}/bin:/out" -w /src -e CARGO_TARGET_DIR=/target -e OWNER="$(id -u):$(id -g)" \
+    -e OPENSSL_STATIC=1 -e OPENSSL_NO_PKG_CONFIG=1 \
+    -e OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu -e OPENSSL_INCLUDE_DIR=/usr/include \
+    -e LIBZ_SYS_STATIC=1 \
+    -e HONE_BUILD_GIT_SHA="${hone_sha}" -e HONE_BUILD_GIT_DATE="${hone_date}" \
     "${HC_RUST_IMAGE}" bash -c '
       set -e
-      apt-get update -qq && apt-get install -y -qq pkg-config libssl-dev git >/dev/null
+      for f in /usr/lib/x86_64-linux-gnu/libssl.a /usr/lib/x86_64-linux-gnu/libcrypto.a /usr/include/openssl/ssl.h; do
+        [ -f "${f}" ] || { echo "missing ${f}: HC_RUST_IMAGE must be the full rust image with the OpenSSL development files (not a slim one)" >&2; exit 1; }
+      done
       cargo build --release --locked -p hone-cli --bin hone
       install -m 0755 /target/release/hone /out/hone
       chown "${OWNER}" /out/hone
       ldd --version | head -1'
+  # What the binary needs at run time: only glibc and libgcc_s (K168).
+  readelf_out="${HC_ROOT}/.build/hone-readelf.txt"
+  mkdir -p "${HC_ROOT}/.build"
+  if ! docker run --rm --platform linux/amd64 -v "${B}/bin:/hb:ro" "${HC_RUST_IMAGE}" \
+    readelf -d /hb/hone > "${readelf_out}"; then
+    rm -f "${B}/bin/hone"
+    die "readelf failed on bin/hone in ${HC_RUST_IMAGE}"
+  fi
+  if ! hc_bundle check-needed "${readelf_out}"; then
+    rm -f "${B}/bin/hone"
+    die "bin/hone needs libraries the task images may not have (see above)"
+  fi
   "${B}/bin/hone" --version >/dev/null 2>&1 || warn "host cannot run bin/hone directly (fine if host glibc differs)"
 fi
 
@@ -77,7 +102,6 @@ fi
 pi_bin_rel=""
 PI_PKG="@earendil-works/pi-coding-agent"
 # Pi build logic lives in hcbench.bundle (spec 11.12 K65-K67).
-hc_bundle() { PYTHONPATH="${HC_ROOT}" python3 -m hcbench.bundle "$@"; }
 pi_fields='{"pi_package": null, "pi_installed_version": null, "pi_lock_sha256": null}'
 if (( ! skip_pi )); then
   : "${HC_HERMES_BUILD_IMAGE:?HC_HERMES_BUILD_IMAGE is not set (the Pi install runs in it too)}"

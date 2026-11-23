@@ -34,6 +34,15 @@ make run-c run-b run-a CAMPAIGN=2026-11          # P1.7–P1.9, resumable
 make grade report CAMPAIGN=2026-11               # P1.10–P1.11
 ```
 
+**Hone in the bundle.** `scripts/01_build_bundle.sh` builds Hone at `HC_HONE_REF` in the full
+`rust:1-bullseye` image (`HC_RUST_IMAGE`, pinned by digest; Debian 11, so glibc 2.31). The build
+installs nothing: the image has git, pkg-config and the OpenSSL development files. It links
+OpenSSL and zlib statically (linux/amd64), so the binary starts in task images that only have
+OpenSSL 3. It then reads the binary's `NEEDED` list with `readelf -d` and fails, removing
+`bin/hone` and writing no manifest, if it names anything but glibc's libraries and `libgcc_s`.
+It passes the commit's full SHA and date, so `bin/hone --version` shows the commit. Skip it with
+`--skip-hone`.
+
 **Hermes in the bundle.** `scripts/01_build_bundle.sh` installs Hermes Agent at
 `HC_HERMES_REF` (a release tag; its SHA goes into `manifest.json`) from its `uv.lock`, with its
 own python-build-standalone interpreter (`HC_HERMES_PYTHON`, installed by `uv`) and a venv built
