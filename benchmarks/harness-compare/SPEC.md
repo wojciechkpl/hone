@@ -478,6 +478,15 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §2, §4.1, §4.4, §4.5.
   `pi_lock_sha256` is 64 lowercase hex and `node_installed_version` is
   `v${HC_NODE_VERSION}` (K73, K79). Every Hone arm sets
   `HONE_CONTEXT_WINDOW = "{{context_window}}"`, so Hone is told the served window.
+- **Hone in the bundle (K166-K169):** Hone is built at `HC_HONE_REF` in `HC_RUST_IMAGE`, the
+  full `rust:1-bullseye` image pinned by digest (Debian 11, glibc 2.31). The build refuses an
+  unpinned image and installs nothing. It runs as `linux/amd64` and links OpenSSL and zlib
+  statically, because the task images have only OpenSSL 3. After the build, `readelf -d` runs
+  in the same image, and `hcbench.bundle check-needed` accepts only nine `NEEDED` names:
+  glibc's libraries, the x86-64 loader and `libgcc_s.so.1`. On a failure the build removes
+  `bin/hone` and leaves no manifest. The build passes `HONE_BUILD_GIT_SHA` and
+  `HONE_BUILD_GIT_DATE`, so `bin/hone --version` prints the commit and its committer date.
+  The pre-registration doesn't check Hone's part of the bundle.
 - **Smoke probes:** `suites/smoke.toml` has one task per probe, id `p-h1-…` to `p-h7-…`.
   P-H1, 2, 3, 5, 7 pin `expect.hermes`; P-H4 and P-H6 are observations with no pinned
   outcome for `hermes-guarded`. `edit-basic`, `shell-basic` and `toolchain-probe` expect

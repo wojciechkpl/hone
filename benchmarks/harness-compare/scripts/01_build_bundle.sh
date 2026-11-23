@@ -60,7 +60,7 @@ if (( ! skip_hone )); then
   [[ "${HC_RUST_IMAGE:-}" =~ @sha256:[0-9a-f]{64}$ ]] \
     || die "HC_RUST_IMAGE must be pinned by digest (<name>:<tag>@sha256:<64 lowercase hex>), got '${HC_RUST_IMAGE:-}'; see config/bench.env.example"
   hone_sha="$(git -C "${REPO_ROOT}" rev-parse "${HC_HONE_REF}^{commit}")"
-  hone_date="$(git -C "${REPO_ROOT}" show -s --format=%cs "${hone_sha}")"
+  hone_date="$(git -C "${REPO_ROOT}" show -s --no-show-signature --format=%cs "${hone_sha}")"
   wt="${HC_ROOT}/.build/hone-src"
   rm -rf "${wt}"; git -C "${REPO_ROOT}" worktree prune
   git -C "${REPO_ROOT}" worktree add --detach "${wt}" "${hone_sha}" >/dev/null

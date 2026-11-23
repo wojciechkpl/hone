@@ -1,4 +1,4 @@
-"""Pi bundle helpers called by scripts/01_build_bundle.sh (spec 11.12 K65-K67).
+"""Bundle helpers called by scripts/01_build_bundle.sh: Pi (11.12 K65-K67), Hone (11.18 K168).
 
 Usage: python3 -m hcbench.bundle check-node NODE_VERSION PACKAGE_JSON
        python3 -m hcbench.bundle copy-ext PACKAGE_DIR DEST_DIR

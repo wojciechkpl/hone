@@ -1422,6 +1422,9 @@ Requirements:
   - The build passes `HONE_BUILD_GIT_SHA`, the full SHA that `HC_HONE_REF` resolves to, and
     `HONE_BUILD_GIT_DATE`, that commit's committer date as `YYYY-MM-DD`.
   - `bin/hone --version` then prints the commit and the date.
+  - The date is read with `--no-show-signature`. Without it, a `log.showSignature` setting
+    puts gpg lines in front of the date of a signed commit, and Hone then drops the date
+    (found by the review of this round; the pinned commit `e7c66a6` is signed).
 - **K170 Docs.**
   - The README gets a "Hone in the bundle" paragraph. It names the full image, and says that
     the build installs nothing, links OpenSSL statically, checks the `NEEDED` list and
