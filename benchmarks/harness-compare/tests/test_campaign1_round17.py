@@ -2,8 +2,9 @@
 
 The script runs offline against a fake `docker` that logs its argv, writes a fake `hone` into
 the directory mounted at /out for the build call, and prints canned `readelf -d` text for the
-call whose argv contains `readelf` (FAKE_READELF = good | bad | none | all_allowed). Assertions
-are on the logged argv, never on the script's text.
+call whose argv contains `readelf` (FAKE_READELF = good | bad | none | all_allowed;
+fail = the call exits 1 with only stderr, fail_good = exits 1 after the good text).
+Assertions are on the logged argv, never on the script's text.
 
 Assumptions the implementer must honor:
 * the build call is the `docker run` whose `bash -c` command contains `cargo build`; it mounts
@@ -92,11 +93,27 @@ from pathlib import Path
 args = sys.argv[1:]
 with open({log!r}, "a") as fh:
     fh.write(json.dumps(["docker"] + args) + "\n")
-joined = " ".join(args)
+cmd = ""
+for i, a in enumerate(args[:-1]):
+    if a == "-c":
+        cmd = args[i + 1]
+is_readelf = "readelf" in args or (
+    "cargo build" not in cmd and re.search(r"(^|[\s;&|])readelf\s", cmd) is not None
+)
 if args[:1] == ["run"]:
-    if "readelf" in joined:
-        sys.stdout.write(json.loads({texts!r})[os.environ.get("FAKE_READELF", "good")])
-    elif "cargo" in joined:
+    if is_readelf:
+        mode = os.environ.get("FAKE_READELF", "good")
+        with open({log!r}, "a") as fh:
+            fh.write(json.dumps(["fake-readelf", mode]) + "\n")
+        texts = json.loads({texts!r})
+        if mode == "fail":
+            sys.stderr.write("fake readelf: docker run failed\\n")
+            sys.exit(1)
+        sys.stdout.write(texts["good" if mode == "fail_good" else mode])
+        sys.exit(1 if mode == "fail_good" else 0)
+    elif "cargo build" in cmd:
+        with open({log!r}, "a") as fh:
+            fh.write(json.dumps(["fake-build"]) + "\n")
         for a in args:
             m = re.match(r"^(.+):/out(:rw)?$", a)
             if m:
@@ -122,7 +139,7 @@ class Hone:
         self.bindir, self.log = make_fake_bin(tmp_path)
         docker = self.bindir / "docker"
         docker.write_text(
-            _DOCKER.format(python=sys.executable, log=str(self.log), texts=repr(json.dumps(TEXTS)))
+            _DOCKER.format(python=sys.executable, log=str(self.log), texts=json.dumps(TEXTS))
         )
         docker.chmod(docker.stat().st_mode | stat.S_IEXEC)
         self.B = tmp_path / "bundle"
@@ -178,9 +195,15 @@ class Hone:
         return found[0]
 
     def readelf_call(self):
-        found = [c for c in self.runs() if "readelf" in " ".join(c)]
+        found = [c for c in self.runs() if is_readelf_call(c)]
         assert len(found) == 1, found
         return found[0]
+
+    def readelf_mode(self) -> str:
+        """The mode the fake docker reached for its readelf call (a marker in the call log)."""
+        marks = [c[1] for c in calls(self.log) if c[0] == "fake-readelf"]
+        assert len(marks) == 1, f"the fake readelf was reached {len(marks)} times"
+        return marks[0]
 
     def stale(self):
         (self.B / "manifest.json").write_text('{"stale": true}\n')
@@ -197,6 +220,13 @@ def command_text(call: list[str]) -> str:
         if a == "-c" and i + 1 < len(call):
             return call[i + 1]
     return ""
+
+
+def is_readelf_call(call: list[str]) -> bool:
+    text = command_text(call)
+    return "readelf" in call or (
+        "cargo build" not in text and re.search(r"(^|[\s;&|])readelf\s", text) is not None
+    )
 
 
 def env_pairs(call: list[str]) -> dict[str, str]:
@@ -352,6 +382,7 @@ def test_k168_a_good_binary_gives_a_bundle_with_a_manifest(hone):
     hone.stale()
     r = hone.run()
     assert r.returncode == 0, r.stderr
+    assert hone.readelf_mode() == "good"
     assert hone.readelf_call()
     assert (hone.B / "bin" / "hone").read_text() != "stale hone\n"
     m = json.loads((hone.B / "manifest.json").read_text())
@@ -382,6 +413,7 @@ def test_k168_the_readelf_output_is_saved_under_build(hone):
 def test_k168_all_nine_allowed_libraries_pass_the_script(hone):
     r = hone.run(readelf="all_allowed")
     assert r.returncode == 0, r.stderr
+    assert hone.readelf_mode() == "all_allowed"
     assert hone.readelf_call()
 
 
@@ -389,6 +421,18 @@ def test_k168_all_nine_allowed_libraries_pass_the_script(hone):
 def test_k168_a_failed_check_removes_bin_hone_writes_no_manifest_and_fails(hone, readelf):
     hone.stale()
     r = hone.run(readelf=readelf)
+    assert hone.readelf_mode() == readelf
+    assert r.returncode != 0
+    assert not (hone.B / "bin" / "hone").exists()
+    assert not (hone.B / "manifest.json").exists()
+
+
+@pytest.mark.parametrize("readelf", ["fail", "fail_good"])
+def test_k168_a_failing_readelf_run_removes_bin_hone_writes_no_manifest_and_fails(hone, readelf):
+    hone.stale()
+    r = hone.run(readelf=readelf)
+    assert hone.readelf_mode() == readelf  # the fake reached the failing mode, it did not crash
+    assert hone.readelf_call()
     assert r.returncode != 0
     assert not (hone.B / "bin" / "hone").exists()
     assert not (hone.B / "manifest.json").exists()
@@ -396,6 +440,7 @@ def test_k168_a_failed_check_removes_bin_hone_writes_no_manifest_and_fails(hone,
 
 def test_k168_the_script_failure_names_the_offending_libraries(hone):
     r = hone.run(readelf="bad")
+    assert hone.readelf_mode() == "bad"
     out = r.stdout + r.stderr
     for lib in BAD_EXTRA:
         assert lib in out
