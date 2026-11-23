@@ -1416,8 +1416,8 @@ Requirements:
     `librt.so.1`, `libutil.so.1`, `libresolv.so.2`, `ld-linux-x86-64.so.2` and
     `libgcc_s.so.1`. It exits non-zero and names every other library. It also exits non-zero
     when the output has no `NEEDED` entry.
-  - When the check fails, the script removes `bin/hone`, writes no manifest and exits
-    non-zero.
+  - When the check fails, or the `readelf` run itself fails, the script removes `bin/hone`,
+    writes no manifest and exits non-zero.
 - **K169 The binary carries its commit.**
   - The build passes `HONE_BUILD_GIT_SHA`, the full SHA that `HC_HONE_REF` resolves to, and
     `HONE_BUILD_GIT_DATE`, that commit's committer date as `YYYY-MM-DD`.
