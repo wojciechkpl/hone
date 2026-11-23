@@ -114,11 +114,37 @@ if args[:1] == ["run"]:
     elif "cargo build" in cmd:
         with open({log!r}, "a") as fh:
             fh.write(json.dumps(["fake-build"]) + "\n")
+        if os.environ.get("FAKE_BUILD") == "fail":
+            sys.stderr.write("fake build: cargo build failed\n")
+            sys.exit(1)
         for a in args:
             m = re.match(r"^(.+):/out(:rw)?$", a)
             if m:
                 Path(m.group(1), "hone").write_text("#!/bin/sh\necho hone fake\n")
                 Path(m.group(1), "hone").chmod(0o755)
+"""
+
+
+_GIT_WRAPPER = """#!{python}
+import os, subprocess, sys
+args = sys.argv[1:]
+me = os.path.dirname(os.path.abspath(__file__))
+dirs = [d for d in os.environ["PATH"].split(os.pathsep) if d != me]
+real = next(os.path.join(d, "git") for d in dirs if os.access(os.path.join(d, "git"), os.X_OK))
+rest, i = [], 0
+while i < len(args):
+    if args[i] in ("-C", "-c"):
+        i += 2
+        continue
+    rest.append(args[i])
+    i += 1
+out = subprocess.run([real, *args], capture_output=True, text=True)
+if rest[:1] in (["show"], ["log"]) and "--no-show-signature" not in args:
+    # what a user's log.showSignature=true does to a signed commit
+    sys.stdout.write("gpg: Signature made Mon 1 Jan 2024\\ngpg: Good signature from X\\n")
+sys.stdout.write(out.stdout)
+sys.stderr.write(out.stderr)
+sys.exit(out.returncode)
 """
 
 
@@ -199,6 +225,12 @@ class Hone:
         assert len(found) == 1, found
         return found[0]
 
+    def show_signatures(self):
+        """Put a git wrapper first on PATH that lists signatures in `git show` and `git log`."""
+        wrapper = self.bindir / "git"
+        wrapper.write_text(_GIT_WRAPPER.format(python=sys.executable))
+        wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
+
     def readelf_mode(self) -> str:
         """The mode the fake docker reached for its readelf call (a marker in the call log)."""
         marks = [c[1] for c in calls(self.log) if c[0] == "fake-readelf"]
@@ -278,6 +310,7 @@ def test_k166_the_example_env_file_pins_the_full_image_by_digest():
         "rust:1-bullseye@sha256:" + "ab" * 32 + " ",  # trailing text
         "rust:1-bullseye@sha1:" + "ab" * 20,
         "rust:1-bullseye@sha256:",
+        "rust:1-bullseye-sha256:" + "ab" * 32,  # no "@"
     ],
 )
 def test_k166_an_unpinned_image_is_refused_before_any_docker_call(hone, image):
@@ -400,6 +433,24 @@ def test_k168_readelf_runs_in_the_build_image_after_the_build_with_bin_read_only
     assert any(a.startswith(f"{hone.B}/bin:") and a.endswith(":ro") for a in elf)
 
 
+def test_k168_a_failed_build_leaves_no_old_binary_no_manifest_and_no_readelf_call(hone):
+    hone.stale()
+    r = hone.run(FAKE_BUILD="fail")
+    assert [c for c in calls(hone.log) if c[0] == "fake-build"]  # the fake reached its fail mode
+    assert r.returncode != 0
+    assert not (hone.B / "bin" / "hone").exists()
+    assert not (hone.B / "manifest.json").exists()
+    assert not [c for c in hone.runs() if is_readelf_call(c)]
+
+
+def test_k168_readelf_reads_the_file_in_the_mounted_directory(hone):
+    assert hone.run().returncode == 0
+    elf = hone.readelf_call()
+    targets = [a.split(":")[1] for a in elf if a.startswith(f"{hone.B}/bin:") and a.endswith(":ro")]
+    assert len(targets) == 1
+    assert f"{targets[0].rstrip('/')}/hone" in elf
+
+
 def test_k168_the_readelf_output_is_saved_under_build(hone):
     assert hone.run().returncode == 0
     saved = [
@@ -481,10 +532,24 @@ def test_k168_check_needed_does_not_name_the_allowed_libraries_as_offenders(tmp_
     assert "libgcc_s.so.1" not in r.stdout + r.stderr
 
 
-def test_k168_check_needed_rejects_one_unlisted_library(tmp_path):
-    r = _check(tmp_path, readelf_text([*GOOD_LIBS, "libcrypt.so.1"]))
+@pytest.mark.parametrize(
+    "lib",
+    [
+        "libcrypt.so.1",
+        "libc.so",
+        "libc.so.7",
+        "libm.so.6.1",
+        "xlibc.so.6",
+        "libgcc_s.so",
+        "libssl.so.3",
+        "libcrypto.so.3",
+        "ld-linux-aarch64.so.1",
+    ],
+)
+def test_k168_check_needed_rejects_one_unlisted_library(tmp_path, lib):
+    r = _check(tmp_path, readelf_text([*GOOD_LIBS, lib]))
     assert r.returncode != 0
-    assert "libcrypt.so.1" in r.stdout + r.stderr
+    assert lib in r.stdout + r.stderr
 
 
 def test_k168_check_needed_ignores_entries_that_are_not_needed(tmp_path):
@@ -510,6 +575,16 @@ def test_k169_the_build_passes_the_full_sha_and_the_committer_date_of_head(hone)
     assert got.get("HONE_BUILD_GIT_SHA") == git(hone.repo, "rev-parse", "HEAD")
     assert re.fullmatch(r"[0-9a-f]{40}", got["HONE_BUILD_GIT_SHA"])
     assert got.get("HONE_BUILD_GIT_DATE") == "2025-07-19"
+
+
+def test_k169_a_signature_listing_in_git_show_does_not_leak_into_the_date(hone):
+    # the git wrapper in the fake bin dir prepends gpg lines to `git show`/`git log` output
+    # unless --no-show-signature is given, as log.showSignature=true does for a signed commit
+    hone.show_signatures()
+    assert hone.run().returncode == 0
+    got = env_pairs(hone.build_call())
+    assert got["HONE_BUILD_GIT_DATE"] == "2025-07-19"
+    assert got["HONE_BUILD_GIT_SHA"] == git(hone.repo, "rev-parse", "HEAD")
 
 
 def test_k169_a_ref_that_is_not_head_gives_that_commits_sha_and_date(hone):
