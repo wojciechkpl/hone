@@ -1350,6 +1350,90 @@ Requirements:
   - update the stage-`a` `ANALYSIS_PLAN`, which still says "official swebench harness"
     and "n=40".
 
+### 11.18 Requirements, round 17 (the Hone build, 2026-11-23)
+
+Section 11.17 and K93–K165 belong to the stage-`a` loader (PR #135), which merges after the
+stage-cb tag.
+
+The first `make bundle` on the GPU box, on 2026-11-23, failed. Test builds there found three
+defects, all in the Hone part of the bundle:
+
+- **The build couldn't install its tools.** It ran `apt-get install pkg-config libssl-dev
+  git` inside `rust:1-slim-bullseye`. Debian 11's security packages are no longer on
+  `deb.debian.org`: the index is still served, but the package files return 404 (they are on
+  `archive.debian.org`). The step fails on every machine.
+- **The binary couldn't start in a task image.** It linked OpenSSL 1.1 dynamically
+  (`libssl.so.1.1` and `libcrypto.so.1.1`, through `git2`). The task images are built on
+  Debian 13, which has only OpenSSL 3, so `hone` stopped with "error while loading shared
+  libraries: libssl.so.1.1". Every Hone arm would have failed in smoke.
+- **The binary didn't know its commit.** `hone --version` printed `commit unknown`, because
+  the build worktree's `.git` file points outside the container.
+
+Pi 1.5.0 and Hermes v0.21.5 built as pinned, and both start in the task base image.
+
+Measured on the box with Hone at `e7c66a6`:
+
+- With OpenSSL linked statically, the binary needs only glibc's libraries and
+  `libgcc_s.so.1`, and its newest glibc symbol version is 2.30.
+- That binary starts in `python:3.12-slim@sha256:5e2bdb1b…` (Debian 13, the task base image)
+  and in `ubuntu:22.04`.
+- The slim image with its tools installed from `archive.debian.org`, and the full image
+  `rust:1-bullseye` with nothing installed, gave byte-identical binaries. So the build uses
+  the full image and installs nothing.
+- In the full image, without `LIBZ_SYS_STATIC`, the binary also needs `libz.so.1`: the image
+  has zlib's development files, and `libz-sys` then links the system library.
+
+Requirements:
+
+- **K166 The Hone build installs nothing.**
+  - The Hone build container runs no package manager: its command has no `apt-get` and no
+    `apt`.
+  - `HC_RUST_IMAGE` in `bench.env.example` is the full image, pinned by digest:
+    `rust:1-bullseye@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9`
+    (Rust 1.98.0 on Debian 11, glibc 2.31, with git, pkg-config and the OpenSSL development
+    files).
+  - When it builds Hone, `01_build_bundle.sh` refuses an `HC_RUST_IMAGE` that doesn't end in
+    `@sha256:` and 64 lowercase hex characters. It refuses before any `docker` call, and the
+    message names the key. With `--skip-hone` or `--helpers-only` the value isn't checked.
+  - Before `cargo build`, the container checks that `libssl.a`, `libcrypto.a` and
+    `openssl/ssl.h` exist under the directories of K167. If one is missing it stops with a
+    message that names `HC_RUST_IMAGE`. A slim image has none of them.
+- **K167 OpenSSL and zlib are linked statically, for linux/amd64.**
+  - The Hone build's `docker run` has `--platform linux/amd64`, as the Pi and Hermes builds
+    already have.
+  - It sets five variables in the container: `OPENSSL_STATIC=1`, `OPENSSL_NO_PKG_CONFIG=1`,
+    `OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu`, `OPENSSL_INCLUDE_DIR=/usr/include` and
+    `LIBZ_SYS_STATIC=1`.
+  - `OPENSSL_STATIC` alone is not enough: found through pkg-config, a system library is
+    still linked dynamically.
+- **K168 The build checks what the binary needs at run time.**
+  - After the build, the script reads the binary's dynamic section with `readelf -d`. It
+    runs `readelf` in the build image, in a second `docker run` that also has `--platform
+    linux/amd64` and mounts the bundle's `bin/` read-only, and saves the output under
+    `.build/`.
+  - `python -m hcbench.bundle check-needed <file>` reads that output. It accepts only these
+    `NEEDED` entries: `libc.so.6`, `libm.so.6`, `libdl.so.2`, `libpthread.so.0`,
+    `librt.so.1`, `libutil.so.1`, `libresolv.so.2`, `ld-linux-x86-64.so.2` and
+    `libgcc_s.so.1`. It exits non-zero and names every other library. It also exits non-zero
+    when the output has no `NEEDED` entry.
+  - When the check fails, the script removes `bin/hone`, writes no manifest and exits
+    non-zero.
+- **K169 The binary carries its commit.**
+  - The build passes `HONE_BUILD_GIT_SHA`, the full SHA that `HC_HONE_REF` resolves to, and
+    `HONE_BUILD_GIT_DATE`, that commit's committer date as `YYYY-MM-DD`.
+  - `bin/hone --version` then prints the commit and the date.
+- **K170 Docs.**
+  - The README gets a "Hone in the bundle" paragraph. It names the full image, and says that
+    the build installs nothing, links OpenSSL statically, checks the `NEEDED` list and
+    passes the commit.
+  - The header of `01_build_bundle.sh` says the same in one line, and the comment above
+    `HC_RUST_IMAGE` in `bench.env.example` says why the image is the full one and why it is
+    Debian 11.
+  - The kit's `bench.env` gets the pinned image, and the runbook's bundle step checks
+    `bin/hone --version`.
+- **Not changed.** The pre-registration still doesn't check Hone's part of the bundle
+  (§11.9), and the manifest's `rust_image` is still the configured value.
+
 ## Sources
 
 - Hermes Agent CLI reference: https://hermes-agent.nousresearch.com/docs/reference/cli-commands
