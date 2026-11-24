@@ -1437,6 +1437,142 @@ Requirements:
 - **Not changed.** The pre-registration still doesn't check Hone's part of the bundle
   (§11.9), and the manifest's `rust_image` is still the configured value.
 
+### 11.19 Requirements, round 18 (the internal network on a Linux host, 2026-11-23)
+
+The first `make stack` on the GPU box, on 2026-11-23, stopped at its last step with "network
+isolation check failed — do not run suite C on this host". The check was right. Run alone
+(`scripts/03_stack.sh probe`), it printed one finding:
+
+```
+host via gateway 172.19.0.1:22 reachable
+```
+
+- **Cause.** Docker gives the bridge of an `--internal` network an address on the host, the
+  network's gateway address. A container on the network can open any host service that
+  listens on every address. The box's SSH server listens on `0.0.0.0:22`, so an arm container
+  on `hc-net` could connect to it.
+- **What was not affected.** External DNS and TCP to the internet were blocked, and the proxy
+  was reachable. The model, proxy and sink ports are published on `127.0.0.1` only, so the
+  gateway address didn't expose them.
+- **Why the Mac didn't show it.** With Docker Desktop the bridge is inside Docker's Linux VM,
+  not on macOS.
+- **The fix.** Docker Engine 28.0.0 added gateway mode `isolated` for internal bridge
+  networks: no address is assigned to the bridge.
+- **Checked on the box** (Docker 29.10.0) with a scratch network created that way: the bridge
+  had no address, a container could not reach port 22 on the host's bridge address or on its
+  LAN address, external DNS and `1.1.1.1:443` stayed blocked, and a second container on the
+  network was still found by its alias and reachable. `docker network inspect` prints
+  `invalid IP` as the gateway of such a network.
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  subgraph before["Before: hc-net internal"]
+    A1[arm container] -->|172.19.0.1:22| H1[host sshd]
+    A1 --> P1[hc-proxy]
+  end
+  subgraph after["After: hc-net internal + isolated"]
+    A2[arm container] -. no route .-> H2[host sshd]
+    A2 --> P2[hc-proxy]
+  end
+```
+
+- **K171 `hc-net` has no address on the host.**
+  - `03_stack.sh up` creates `HC_NET` with `--internal`,
+    `-o com.docker.network.bridge.gateway_mode_ipv4=isolated` and
+    `-o com.docker.network.bridge.gateway_mode_ipv6=isolated`.
+- **K172 `up` replaces an `hc-net` that was made the old way.**
+  - `up` reads the network with one call:
+    `docker network inspect -f '{{.Internal}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv6"}}' "${HC_NET}"`.
+  - When the call fails, the network doesn't exist, and `up` creates it (K171).
+  - When the output is exactly `true isolated isolated`, `up` leaves the network alone: no
+    `docker network rm` and no `docker network create` for `HC_NET`.
+  - For any other output, `up` runs `docker network rm "${HC_NET}"` and then creates the
+    network (K171).
+  - The remove and the create come after `docker rm -f hc-proxy hc-sink` and before the proxy
+    starts.
+  - When `docker network rm` fails, for example because an arm container is still attached,
+    `up` stops with an error that names the network and says to stop the containers on it. It
+    runs no `docker run` after that.
+  - K19 still holds: with a campaign-1 key missing, `up` makes no `docker` call.
+- **K173 The probe accepts a network without a gateway.**
+  - The probe passes the gateway value to its container as `GW` only when the value is an IP
+    address. For any other value, such as `invalid IP` or nothing, it passes an empty `GW`,
+    and the container tries no host port.
+  - With a gateway address, the probe tries the same ports as before.
+- **K174 The error says what failed.**
+  - When the probe fails in `up`, the error line carries the probe's findings:
+    `network isolation check failed (<findings, joined by "; ">) — do not run suite C on this host`.
+  - `03_stack.sh probe` prints the findings and returns the probe's exit code, as before.
+- **K175 Preflight asks for Docker 28.0.0.**
+  - The Docker line of `00_preflight.sh` passes for a server version of 28.0.0 or later and
+    fails below it. The failure names 28.0.0 and the word `isolated`.
+  - It replaces the 25.0.5 check: 28.0.0 already has the fix for CVE-2024-29018.
+- **K176 Docs.**
+  - The header of `03_stack.sh` and the README say that `hc-net` is internal and isolated, and
+    why.
+  - `SPEC.md` gets a paragraph for this round.
+  - Step 1 of the kit's runbook asks for Docker Engine 28.0.0 or later.
+From the review of this round (2026-11-23):
+
+- **K177 The probe reads every gateway.**
+  - The gateway call becomes
+    `docker network inspect -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' "${HC_NET}"`,
+    with a space after each value. Without the space a network with IPv4 and IPv6 printed
+    both gateways as one word (`172.23.0.1fd1c:ab34:fe4b::1` on Docker 29.1.3). The probe then
+    tried a name that doesn't resolve and printed "isolation ok".
+  - `GW` holds every value that is an IPv4 or IPv6 address, separated by one space. Other
+    words, such as `invalid` and `IP`, are dropped. This replaces "an IP address" in K173.
+  - The container tries the ports on every address in `GW`.
+- **K178 `up` checks what Docker did, not only the option.**
+  - Docker stores a bridge option it doesn't know. An engine without gateway mode `isolated`
+    may store the option and still give the bridge an address (not tested on such an engine).
+  - An existing network is left alone only when the K172 output is `true isolated isolated`
+    and the gateway call of K177 gives no address. Otherwise `up` replaces it.
+  - After `up` creates the network it makes the gateway call again. When there is an
+    address, `up` removes the network, stops with an error that says Docker ignored gateway
+    mode `isolated` and names 28.0.0, and runs no `docker run`.
+- **K179 Errors show Docker's reason.**
+  - `up` no longer hides what Docker prints when `docker network rm` fails.
+  - When `docker network create` fails, `up` stops with an error that names the network and
+    runs no `docker run`. The error doesn't name a Docker version.
+- **K180 Docs say what the probe checks.**
+  - On an isolated network the host has no address in the subnet, so the probe tries no host
+    port. The script header, the README and `SPEC.md` say this, and that `up` checks the
+    gateway Docker reports instead.
+  - `SPEC.md` says that `hc-proxy` and `hc-sink` are already removed when the network remove
+    fails, and that the first address of the subnet now belongs to a container.
+  - The usage line of `03_stack.sh` lists `probe`.
+From the second review (2026-11-23):
+
+- **K181 A failed gateway read is not "no gateway".**
+  - When the gateway call of K177 itself fails, `up` stops with an error that names the
+    network and the word `gateway`, and runs no `docker run`. This holds for the read
+    before a replace and for the read after a create.
+  - In the same case the probe prints `cannot read the gateway of <network>`, returns 1 and
+    doesn't start its container.
+- **K182 A finding shows an IPv6 address in brackets.**
+  - `host via gateway [fd1c:ab34:fe4b::1]:22 reachable`. An IPv4 finding is unchanged.
+
+Checked with the final script, on the box (Docker 29.10.0) against scratch networks with a
+stand-in container named `hc-proxy`:
+
+| Network | Gateways Docker prints | Probe |
+|---|---|---|
+| internal, IPv4 | `172.20.0.1` | fails: port 22 on the gateway |
+| internal, IPv4 and IPv6 | `172.20.0.1 fd89:5c4f:a7fa::1` | fails: port 22 on both gateways |
+| internal and isolated | `invalid IP` | passes |
+
+A container on the isolated network there had one IPv4 route, to the subnet, and an IPv6
+address on `lo` only.
+
+On the Mac (Docker 29.1.3) `03_stack.sh up` replaced an internal network with IPv4 and IPv6,
+passed the probe, and left the network alone on a second `up`. No engine older than 29 was
+tried, and the changed `up` has not yet run on the box.
+
+- **Not changed.** `hc-up`, the published ports, the probe's other checks and `down`. A
+  failed probe still leaves the proxy and the sink running.
+
 ## Sources
 
 - Hermes Agent CLI reference: https://hermes-agent.nousresearch.com/docs/reference/cli-commands
@@ -1449,3 +1585,4 @@ Requirements:
 - SWE-rebench paper: https://arxiv.org/abs/2505.20411 ; leaderboard dataset on Harbor hub: https://hub.harborframework.com/datasets/swe-rebench/swe-rebench-leaderboard/latest
 - SWE-rebench dataset announcement (SWE-bench fork for execution): https://nebius.com/blog/posts/swe-rebench-dataset
 - Terminal-Bench paper (2.0, 89 tasks): https://arxiv.org/abs/2601.11868 ; Harbor task format: https://www.harborframework.com/docs/tasks
+- Docker gateway modes (mode `isolated`): https://docs.docker.com/engine/network/port-publishing/ ; Docker Engine 28.0.0 release notes: https://docs.docker.com/engine/release-notes/28/
