@@ -42,8 +42,8 @@ Hone automatically detects and prioritizes available providers in this order:
 2. `OPENAI_API_KEY` env var → **OpenAI API**
 3. `claude` command available → **Claude CLI**
 4. `gemini` command available → **Gemini CLI**
-5. `OLLAMA_HOST` env var → **Ollama**
-6. Fallback → **Mock provider** (for testing)
+5. Ollama answers at `[providers.ollama].base_url` (default `http://localhost:11434`) and has its model (`[providers.ollama].model`, default `llama3.2`) → **Ollama**
+6. None of these → Hone exits with "No AI provider detected"
 
 Override with `--model` or config file.
 
