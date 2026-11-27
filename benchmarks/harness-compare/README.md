@@ -7,7 +7,7 @@ and serves as the regression gate for Phase 2.
 
 ```
 hc-llm (vLLM) ◀── hc-proxy (metering, forced sampling, caps, records) ◀── arm containers
-                                                                     (internal network, no internet)
+                                                     (internal network: no internet, no route to the host)
 ```
 
 - **Suites**
@@ -147,6 +147,19 @@ rebuild on the same box, where Docker reuses the cached layers. Don't prune the 
 (`docker builder prune`, `docker system prune`) until the campaign ends, and keep disk space
 free: Docker can also evict the cache by itself when the disk fills. If `make stack` after
 the tag rebuilds an image from scratch, log it in `prereg/c1/DEVIATIONS.md`.
+
+**Network.** Arm containers sit on `hc-net` only. `make stack` creates it as an internal
+network with gateway mode `isolated`, which needs Docker Engine 28.0.0 or later
+(`make preflight` checks the version). An internal network alone isn't enough on a Linux
+host: its bridge has an address on the host, and through that address a container reaches
+every host service that listens on all addresses, such as SSH. With `isolated` the bridge
+has no address. `make stack` replaces an `hc-net` that was made without it, and stops when
+Docker still reports a gateway address for the new network. It ends with a check from
+inside the network: external DNS, TCP to the internet, the proxy, and a few ports on each
+gateway address Docker reports. An isolated network has no gateway address, so there the
+check tries no host port: that a container can't reach the host rests on the gateway mode.
+When the check fails, the error names what a container could reach; don't run suite C on
+that host until it passes.
 
 Before the tag, `git status --ignored --short .` should list only build outputs, caches
 and tool folders (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`,
