@@ -42,8 +42,8 @@ Hone automatically detects and prioritizes available providers in this order:
 2. `OPENAI_API_KEY` env var → **OpenAI API**
 3. `claude` command available → **Claude CLI**
 4. `gemini` command available → **Gemini CLI**
-5. `OLLAMA_HOST` env var → **Ollama**
-6. Fallback → **Mock provider** (for testing)
+5. Ollama answers at `[providers.ollama].base_url` (default `http://localhost:11434`) and has its model (`[providers.ollama].model`, default `llama3.2`) → **Ollama**
+6. None of these → Hone exits with "No AI provider detected"
 
 Override with `--model` or config file.
 
@@ -132,6 +132,8 @@ model = "qwen2.5-coder:7b"  # used when auto-detection picks Ollama
 ```
 
 Timeouts can't be changed, but a slow model isn't cut off while it keeps sending tokens (see [Timeouts](#timeouts)).
+
+Hone doesn't read `OLLAMA_HOST`: the address comes from `base_url`. To use a model on another machine, see [Local Model on Another Machine](local-model-remote-gpu.md).
 
 **Available models:** Any model you `ollama pull`. Run `ollama list` to see installed models.
 
