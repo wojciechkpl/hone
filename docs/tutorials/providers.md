@@ -133,6 +133,8 @@ model = "qwen2.5-coder:7b"  # used when auto-detection picks Ollama
 
 Timeouts can't be changed, but a slow model isn't cut off while it keeps sending tokens (see [Timeouts](#timeouts)).
 
+Hone doesn't read `OLLAMA_HOST`: the address comes from `base_url`. To use a model on another machine, see [Local Model on Another Machine](local-model-remote-gpu.md).
+
 **Available models:** Any model you `ollama pull`. Run `ollama list` to see installed models.
 
 **Tool calling:** Hone supports native function calling on models that implement the tool_calls API (Qwen 2.5 Coder, Llama 3.2+, Mistral, DeepSeek Coder). Models that output tool calls as text (Qwen 2.5 Coder in text mode) are also supported with automatic JSON parsing.

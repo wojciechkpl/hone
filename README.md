@@ -1509,6 +1509,7 @@ Gemini CLI is now for Gemini Code Assist Standard and Enterprise customers: free
 **User Guides (in [docs/tutorials/](docs/tutorials/)):**
 - **[Getting Started](docs/tutorials/getting-started.md)** — Installation, first session, understanding output
 - **[Providers](docs/tutorials/providers.md)** — Model providers, hot-swapping, custom endpoints (OpenRouter, DeepSeek, etc.)
+- **[Local Model on Another Machine](docs/tutorials/local-model-remote-gpu.md)** — Hone on a laptop, the model on a GPU machine with Ollama, connected through an SSH tunnel
 - **[Security](docs/tutorials/security.md)** — Sandboxing (Seatbelt/Landlock), RBAC, audit logging, memory encryption
 - **[Tools & MCP](docs/tutorials/tools-and-mcp.md)** — Layer architecture, native tools, MCP integration
 - **[Recipes](docs/tutorials/recipes.md)** — YAML workflows, multi-step automation

@@ -17,6 +17,8 @@ Start here if you're new to Hone:
 
 - **[Providers](providers.md)** — Configuring Anthropic API, OpenAI (and custom endpoints like DeepSeek, OpenRouter, Qwen), Ollama (local), CLI pass-through tools, ACP, hot-swapping providers, fallback chains, model routing rules, pricing tables, cost tracking, health checks, custom timeouts
 
+- **[Local Model on Another Machine](local-model-remote-gpu.md)** — Hone on a laptop with the model on a GPU machine: picking a model with tool support, where Ollama listens, context length (`OLLAMA_CONTEXT_LENGTH`, `HONE_CONTEXT_WINDOW`), the SSH tunnel, `config.toml`, troubleshooting
+
 - **[Tools and MCP](tools-and-mcp.md)** — Layer architecture (L0–L3), native tools (file, shell, git, LSP, semantic index), MCP integration (JSON-RPC, external tools), Code Mode (agent-generated orchestration), skills (HONE.md conventions), tool registry and dispatch, writing custom tools
 
 - **[Recipes](recipes.md)** — YAML recipe system, recipe format with annotations, conditional steps, TDD hook (test_cmd), running the built-in recipes (runs never pause), recipe output, writing and sharing recipes
@@ -145,6 +147,7 @@ docs/
 │   ├── README.md                          # This file (overview & learning paths)
 │   ├── getting-started.md                 # Installation & first session
 │   ├── providers.md                       # Model providers & hot-swapping
+│   ├── local-model-remote-gpu.md          # Ollama on a GPU machine over SSH
 │   ├── acp.md                             # ACP bidirectional tool dispatch
 │   ├── tools-and-mcp.md                   # Tool system & integrations
 │   ├── recipes.md                         # YAML recipes & automation

@@ -62,6 +62,7 @@ nav:
     - Configuration: configuration.md
     - Permissions & Sandbox: permissions-and-sandbox.md
     - Providers: tutorials/providers.md
+    - Local Model on Another Machine: tutorials/local-model-remote-gpu.md
   - Features:
     - Architecture: architecture.md
     - Context Injection: context-injection.md
