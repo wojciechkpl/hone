@@ -51,7 +51,14 @@ def make_rig(tmp_path: Path) -> Path:
         ROOT,
         dest,
         ignore=shutil.ignore_patterns(
-            ".bundle", "results", "__pycache__", ".claude", "prereg", ".pytest_cache", ".venv"
+            ".bundle",
+            ".build",
+            "results",
+            "__pycache__",
+            ".claude",
+            "prereg",
+            ".pytest_cache",
+            ".venv",
         ),
     )
     return dest

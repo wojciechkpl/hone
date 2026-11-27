@@ -1,8 +1,9 @@
-"""Pi bundle helpers called by scripts/01_build_bundle.sh (spec 11.12 K65-K67).
+"""Bundle helpers called by scripts/01_build_bundle.sh: Pi (11.12 K65-K67), Hone (11.18 K168).
 
 Usage: python3 -m hcbench.bundle check-node NODE_VERSION PACKAGE_JSON
        python3 -m hcbench.bundle copy-ext PACKAGE_DIR DEST_DIR
        python3 -m hcbench.bundle manifest-fields PI_PREFIX_DIR
+       python3 -m hcbench.bundle check-needed READELF_OUTPUT_FILE
 """
 
 import hashlib
@@ -14,6 +15,22 @@ from pathlib import Path
 
 PI_PACKAGE = "@earendil-works/pi-coding-agent"
 PI_EXTENSIONS = ("permission-gate", "protected-paths", "confirm-destructive")
+
+# Libraries the Hone binary may need at run time (spec 11.18 K168).
+ALLOWED_NEEDED = frozenset(
+    {
+        "libc.so.6",
+        "libm.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "librt.so.1",
+        "libutil.so.1",
+        "libresolv.so.2",
+        "ld-linux-x86-64.so.2",
+        "libgcc_s.so.1",
+    }
+)
+_NEEDED_RE = re.compile(r"\(NEEDED\)\s+Shared library: \[([^\]]+)\]")
 
 _MIN_RE = re.compile(r"^>=(\d+)\.(\d+)\.(\d+)$")
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
@@ -38,6 +55,16 @@ def check_node_engine(node_version: str, engines_node: str | None) -> None:
             f"Node {node_version} is below the {'.'.join(map(str, minimum))} that "
             f"{PI_PACKAGE} requires (engines.node {engines_node})"
         )
+
+
+def check_needed(readelf_text: str) -> None:
+    """Exit unless every NEEDED entry of `readelf -d` output is allowed; none at all fails too."""
+    libs = _NEEDED_RE.findall(readelf_text)
+    if not libs:
+        sys.exit("no NEEDED entry in the readelf output: cannot tell what bin/hone needs")
+    extra = sorted({lib for lib in libs if lib not in ALLOWED_NEEDED})
+    if extra:
+        sys.exit("bin/hone needs libraries outside the allowed list: " + ", ".join(extra))
 
 
 def copy_pi_extensions(pkg_dir: Path, dest_dir: Path) -> None:
@@ -96,6 +123,12 @@ def main(argv: list[str]) -> None:
     cmd, args = argv[0], argv[1:]
     if cmd == "check-node" and len(args) == 2:
         check_node_engine(args[0], _engines_node(Path(args[1])))
+    elif cmd == "check-needed" and len(args) == 1:
+        try:
+            text = Path(args[0]).read_text(errors="replace")
+        except OSError as exc:
+            sys.exit(f"cannot read {args[0]}: {exc}")
+        check_needed(text)
     elif cmd == "copy-ext" and len(args) == 2:
         copy_pi_extensions(Path(args[0]), Path(args[1]))
     elif cmd == "manifest-fields" and len(args) == 1:

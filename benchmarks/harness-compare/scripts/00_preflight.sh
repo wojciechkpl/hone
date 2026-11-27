@@ -36,8 +36,8 @@ echo "== docker"
 if docker info >/dev/null 2>&1; then
   pass "docker daemon reachable"
   dver="$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo 0)"
-  if printf '25.0.5\n%s\n' "${dver}" | sort -V -C; then pass "docker ${dver} (≥ 25.0.5)"
-  else fail "docker ${dver}: internal networks leak DNS before 25.0.5/26.0 (CVE-2024-29018)"; fi
+  if printf '28.0.0\n%s\n' "${dver}" | sort -V -C; then pass "docker ${dver} (≥ 28.0.0)"
+  else fail "docker ${dver}: need ≥ 28.0.0, which has gateway mode isolated for the internal network (before it, a container reaches host services through the bridge address)"; fi
   docker info --format '{{json .Runtimes}}' | grep -q nvidia && pass "nvidia container runtime" \
     || note "nvidia runtime not listed; check nvidia-container-toolkit (docker run --gpus all ...)"
   root="$(docker info --format '{{.DockerRootDir}}')"

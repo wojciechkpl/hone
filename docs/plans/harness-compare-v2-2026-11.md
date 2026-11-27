@@ -2038,6 +2038,229 @@ campaign folder and are not results. The hashes of the stage-`a` files are recor
 the rehearsal and checked before the commit, and the commit message of the tag names the
 rehearsal.
 
+### 11.18 Requirements, round 17 (the Hone build, 2026-11-23)
+
+Section 11.17 and K93–K165 belong to the stage-`a` loader (PR #135), which merges after the
+stage-cb tag.
+
+The first `make bundle` on the GPU box, on 2026-11-23, failed. Test builds there found three
+defects, all in the Hone part of the bundle:
+
+- **The build couldn't install its tools.** It ran `apt-get install pkg-config libssl-dev
+  git` inside `rust:1-slim-bullseye`. Debian 11's security packages are no longer on
+  `deb.debian.org`: the index is still served, but the package files return 404 (they are on
+  `archive.debian.org`). The step fails on every machine.
+- **The binary couldn't start in a task image.** It linked OpenSSL 1.1 dynamically
+  (`libssl.so.1.1` and `libcrypto.so.1.1`, through `git2`). The task images are built on
+  Debian 13, which has only OpenSSL 3, so `hone` stopped with "error while loading shared
+  libraries: libssl.so.1.1". Every Hone arm would have failed in smoke.
+- **The binary didn't know its commit.** `hone --version` printed `commit unknown`, because
+  the build worktree's `.git` file points outside the container.
+
+Pi 1.5.0 and Hermes v0.21.5 built as pinned, and both start in the task base image.
+
+Measured on the box with Hone at `e7c66a6`:
+
+- With OpenSSL linked statically, the binary needs only glibc's libraries and
+  `libgcc_s.so.1`, and its newest glibc symbol version is 2.30.
+- That binary starts in `python:3.12-slim@sha256:5e2bdb1b…` (Debian 13, the task base image)
+  and in `ubuntu:22.04`.
+- The slim image with its tools installed from `archive.debian.org`, and the full image
+  `rust:1-bullseye` with nothing installed, gave byte-identical binaries. So the build uses
+  the full image and installs nothing.
+- In the full image, without `LIBZ_SYS_STATIC`, the binary also needs `libz.so.1`: the image
+  has zlib's development files, and `libz-sys` then links the system library.
+
+Requirements:
+
+- **K166 The Hone build installs nothing.**
+  - The Hone build container runs no package manager: its command has no `apt-get` and no
+    `apt`.
+  - `HC_RUST_IMAGE` in `bench.env.example` is the full image, pinned by digest:
+    `rust:1-bullseye@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9`
+    (Rust 1.98.0 on Debian 11, glibc 2.31, with git, pkg-config and the OpenSSL development
+    files).
+  - When it builds Hone, `01_build_bundle.sh` refuses an `HC_RUST_IMAGE` that doesn't end in
+    `@sha256:` and 64 lowercase hex characters. It refuses before any `docker` call, and the
+    message names the key. With `--skip-hone` or `--helpers-only` the value isn't checked.
+  - Before `cargo build`, the container checks that `libssl.a`, `libcrypto.a` and
+    `openssl/ssl.h` exist under the directories of K167. If one is missing it stops with a
+    message that names `HC_RUST_IMAGE`. A slim image has none of them.
+- **K167 OpenSSL and zlib are linked statically, for linux/amd64.**
+  - The Hone build's `docker run` has `--platform linux/amd64`, as the Pi and Hermes builds
+    already have.
+  - It sets five variables in the container: `OPENSSL_STATIC=1`, `OPENSSL_NO_PKG_CONFIG=1`,
+    `OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu`, `OPENSSL_INCLUDE_DIR=/usr/include` and
+    `LIBZ_SYS_STATIC=1`.
+  - `OPENSSL_STATIC` alone is not enough: found through pkg-config, a system library is
+    still linked dynamically.
+- **K168 The build checks what the binary needs at run time.**
+  - After the build, the script reads the binary's dynamic section with `readelf -d`. It
+    runs `readelf` in the build image, in a second `docker run` that also has `--platform
+    linux/amd64` and mounts the bundle's `bin/` read-only, and saves the output under
+    `.build/`.
+  - `python -m hcbench.bundle check-needed <file>` reads that output. It accepts only these
+    `NEEDED` entries: `libc.so.6`, `libm.so.6`, `libdl.so.2`, `libpthread.so.0`,
+    `librt.so.1`, `libutil.so.1`, `libresolv.so.2`, `ld-linux-x86-64.so.2` and
+    `libgcc_s.so.1`. It exits non-zero and names every other library. It also exits non-zero
+    when the output has no `NEEDED` entry.
+  - When the check fails, or the `readelf` run itself fails, the script removes `bin/hone`,
+    writes no manifest and exits non-zero.
+- **K169 The binary carries its commit.**
+  - The build passes `HONE_BUILD_GIT_SHA`, the full SHA that `HC_HONE_REF` resolves to, and
+    `HONE_BUILD_GIT_DATE`, that commit's committer date as `YYYY-MM-DD`.
+  - `bin/hone --version` then prints the commit and the date.
+  - The date is read with `--no-show-signature`. Without it, a `log.showSignature` setting
+    puts gpg lines in front of the date of a signed commit, and Hone then drops the date
+    (found by the review of this round; the pinned commit `e7c66a6` is signed).
+- **K170 Docs.**
+  - The README gets a "Hone in the bundle" paragraph. It names the full image, and says that
+    the build installs nothing, links OpenSSL statically, checks the `NEEDED` list and
+    passes the commit.
+  - The header of `01_build_bundle.sh` says the same in one line, and the comment above
+    `HC_RUST_IMAGE` in `bench.env.example` says why the image is the full one and why it is
+    Debian 11.
+  - The kit's `bench.env` gets the pinned image, and the runbook's bundle step checks
+    `bin/hone --version`.
+- **Not changed.** The pre-registration still doesn't check Hone's part of the bundle
+  (§11.9), and the manifest's `rust_image` is still the configured value.
+
+### 11.19 Requirements, round 18 (the internal network on a Linux host, 2026-11-23)
+
+The first `make stack` on the GPU box, on 2026-11-23, stopped at its last step with "network
+isolation check failed — do not run suite C on this host". The check was right. Run alone
+(`scripts/03_stack.sh probe`), it printed one finding:
+
+```
+host via gateway 172.19.0.1:22 reachable
+```
+
+- **Cause.** Docker gives the bridge of an `--internal` network an address on the host, the
+  network's gateway address. A container on the network can open any host service that
+  listens on every address. The box's SSH server listens on `0.0.0.0:22`, so an arm container
+  on `hc-net` could connect to it.
+- **What was not affected.** External DNS and TCP to the internet were blocked, and the proxy
+  was reachable. The model, proxy and sink ports are published on `127.0.0.1` only, so the
+  gateway address didn't expose them.
+- **Why the Mac didn't show it.** With Docker Desktop the bridge is inside Docker's Linux VM,
+  not on macOS.
+- **The fix.** Docker Engine 28.0.0 added gateway mode `isolated` for internal bridge
+  networks: no address is assigned to the bridge.
+- **Checked on the box** (Docker 29.10.0) with a scratch network created that way: the bridge
+  had no address, a container could not reach port 22 on the host's bridge address or on its
+  LAN address, external DNS and `1.1.1.1:443` stayed blocked, and a second container on the
+  network was still found by its alias and reachable. `docker network inspect` prints
+  `invalid IP` as the gateway of such a network.
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  subgraph before["Before: hc-net internal"]
+    A1[arm container] -->|172.19.0.1:22| H1[host sshd]
+    A1 --> P1[hc-proxy]
+  end
+  subgraph after["After: hc-net internal + isolated"]
+    A2[arm container] -. no route .-> H2[host sshd]
+    A2 --> P2[hc-proxy]
+  end
+```
+
+- **K171 `hc-net` has no address on the host.**
+  - `03_stack.sh up` creates `HC_NET` with `--internal`,
+    `-o com.docker.network.bridge.gateway_mode_ipv4=isolated` and
+    `-o com.docker.network.bridge.gateway_mode_ipv6=isolated`.
+- **K172 `up` replaces an `hc-net` that was made the old way.**
+  - `up` reads the network with one call:
+    `docker network inspect -f '{{.Internal}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv6"}}' "${HC_NET}"`.
+  - When the call fails, the network doesn't exist, and `up` creates it (K171).
+  - When the output is exactly `true isolated isolated`, `up` leaves the network alone: no
+    `docker network rm` and no `docker network create` for `HC_NET`.
+  - For any other output, `up` runs `docker network rm "${HC_NET}"` and then creates the
+    network (K171).
+  - The remove and the create come after `docker rm -f hc-proxy hc-sink` and before the proxy
+    starts.
+  - When `docker network rm` fails, for example because an arm container is still attached,
+    `up` stops with an error that names the network and says to stop the containers on it. It
+    runs no `docker run` after that.
+  - K19 still holds: with a campaign-1 key missing, `up` makes no `docker` call.
+- **K173 The probe accepts a network without a gateway.**
+  - The probe passes the gateway value to its container as `GW` only when the value is an IP
+    address. For any other value, such as `invalid IP` or nothing, it passes an empty `GW`,
+    and the container tries no host port.
+  - With a gateway address, the probe tries the same ports as before.
+- **K174 The error says what failed.**
+  - When the probe fails in `up`, the error line carries the probe's findings:
+    `network isolation check failed (<findings, joined by "; ">) — do not run suite C on this host`.
+  - `03_stack.sh probe` prints the findings and returns the probe's exit code, as before.
+- **K175 Preflight asks for Docker 28.0.0.**
+  - The Docker line of `00_preflight.sh` passes for a server version of 28.0.0 or later and
+    fails below it. The failure names 28.0.0 and the word `isolated`.
+  - It replaces the 25.0.5 check: 28.0.0 already has the fix for CVE-2024-29018.
+- **K176 Docs.**
+  - The header of `03_stack.sh` and the README say that `hc-net` is internal and isolated, and
+    why.
+  - `SPEC.md` gets a paragraph for this round.
+  - Step 1 of the kit's runbook asks for Docker Engine 28.0.0 or later.
+From the review of this round (2026-11-23):
+
+- **K177 The probe reads every gateway.**
+  - The gateway call becomes
+    `docker network inspect -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' "${HC_NET}"`,
+    with a space after each value. Without the space a network with IPv4 and IPv6 printed
+    both gateways as one word (`172.23.0.1fd1c:ab34:fe4b::1` on Docker 29.1.3). The probe then
+    tried a name that doesn't resolve and printed "isolation ok".
+  - `GW` holds every value that is an IPv4 or IPv6 address, separated by one space. Other
+    words, such as `invalid` and `IP`, are dropped. This replaces "an IP address" in K173.
+  - The container tries the ports on every address in `GW`.
+- **K178 `up` checks what Docker did, not only the option.**
+  - Docker stores a bridge option it doesn't know. An engine without gateway mode `isolated`
+    may store the option and still give the bridge an address (not tested on such an engine).
+  - An existing network is left alone only when the K172 output is `true isolated isolated`
+    and the gateway call of K177 gives no address. Otherwise `up` replaces it.
+  - After `up` creates the network it makes the gateway call again. When there is an
+    address, `up` removes the network, stops with an error that says Docker ignored gateway
+    mode `isolated` and names 28.0.0, and runs no `docker run`.
+- **K179 Errors show Docker's reason.**
+  - `up` no longer hides what Docker prints when `docker network rm` fails.
+  - When `docker network create` fails, `up` stops with an error that names the network and
+    runs no `docker run`. The error doesn't name a Docker version.
+- **K180 Docs say what the probe checks.**
+  - On an isolated network the host has no address in the subnet, so the probe tries no host
+    port. The script header, the README and `SPEC.md` say this, and that `up` checks the
+    gateway Docker reports instead.
+  - `SPEC.md` says that `hc-proxy` and `hc-sink` are already removed when the network remove
+    fails, and that the first address of the subnet now belongs to a container.
+  - The usage line of `03_stack.sh` lists `probe`.
+From the second review (2026-11-23):
+
+- **K181 A failed gateway read is not "no gateway".**
+  - When the gateway call of K177 itself fails, `up` stops with an error that names the
+    network and the word `gateway`, and runs no `docker run`. This holds for the read
+    before a replace and for the read after a create.
+  - In the same case the probe prints `cannot read the gateway of <network>`, returns 1 and
+    doesn't start its container.
+- **K182 A finding shows an IPv6 address in brackets.**
+  - `host via gateway [fd1c:ab34:fe4b::1]:22 reachable`. An IPv4 finding is unchanged.
+
+Checked with the final script, on the box (Docker 29.10.0) against scratch networks with a
+stand-in container named `hc-proxy`:
+
+| Network | Gateways Docker prints | Probe |
+|---|---|---|
+| internal, IPv4 | `172.20.0.1` | fails: port 22 on the gateway |
+| internal, IPv4 and IPv6 | `172.20.0.1 fd89:5c4f:a7fa::1` | fails: port 22 on both gateways |
+| internal and isolated | `invalid IP` | passes |
+
+A container on the isolated network there had one IPv4 route, to the subnet, and an IPv6
+address on `lo` only.
+
+On the Mac (Docker 29.1.3) `03_stack.sh up` replaced an internal network with IPv4 and IPv6,
+passed the probe, and left the network alone on a second `up`. No engine older than 29 was
+tried, and the changed `up` has not yet run on the box.
+
+- **Not changed.** `hc-up`, the published ports, the probe's other checks and `down`. A
+  failed probe still leaves the proxy and the sink running.
+
 ## Sources
 
 - Hermes Agent CLI reference: https://hermes-agent.nousresearch.com/docs/reference/cli-commands
@@ -2050,3 +2273,4 @@ rehearsal.
 - SWE-rebench paper: https://arxiv.org/abs/2505.20411 ; leaderboard dataset on Harbor hub: https://hub.harborframework.com/datasets/swe-rebench/swe-rebench-leaderboard/latest
 - SWE-rebench dataset announcement (SWE-bench fork for execution): https://nebius.com/blog/posts/swe-rebench-dataset
 - Terminal-Bench paper (2.0, 89 tasks): https://arxiv.org/abs/2601.11868 ; Harbor task format: https://www.harborframework.com/docs/tasks
+- Docker gateway modes (mode `isolated`): https://docs.docker.com/engine/network/port-publishing/ ; Docker Engine 28.0.0 release notes: https://docs.docker.com/engine/release-notes/28/

@@ -478,6 +478,33 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §2, §4.1, §4.4, §4.5.
   `pi_lock_sha256` is 64 lowercase hex and `node_installed_version` is
   `v${HC_NODE_VERSION}` (K73, K79). Every Hone arm sets
   `HONE_CONTEXT_WINDOW = "{{context_window}}"`, so Hone is told the served window.
+- **Hone in the bundle (K166-K169):** Hone is built at `HC_HONE_REF` in `HC_RUST_IMAGE`, the
+  full `rust:1-bullseye` image pinned by digest (Debian 11, glibc 2.31). The build refuses an
+  unpinned image and installs nothing. It runs as `linux/amd64` and links OpenSSL and zlib
+  statically, because the task images have only OpenSSL 3. After the build, `readelf -d` runs
+  in the same image, and `hcbench.bundle check-needed` accepts only nine `NEEDED` names:
+  glibc's libraries, the x86-64 loader and `libgcc_s.so.1`. When the build, `readelf` or the
+  check fails, the script removes `bin/hone`; any failure leaves no manifest. The build passes `HONE_BUILD_GIT_SHA` and
+  `HONE_BUILD_GIT_DATE`, so `bin/hone --version` prints the commit and its committer date.
+  The pre-registration doesn't check Hone's part of the bundle.
+- **The internal network (K171-K182):** `03_stack.sh up` creates `HC_NET` with `--internal`
+  and gateway mode `isolated` for IPv4 and IPv6, so the bridge has no address on the host and
+  an arm container can't reach host services. It reads an existing network with
+  `docker network inspect -f '{{.Internal}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv6"}}'`
+  and keeps it only when the output is `true isolated isolated` and Docker reports no gateway
+  address for it (K178). Any other network is removed and created again, after `hc-proxy` and
+  `hc-sink` are removed and before the proxy starts. When the remove or the create fails,
+  `up` stops and starts no container; `hc-proxy` and `hc-sink` are already removed by then.
+  When the new network still has a gateway address, Docker ignored the mode: `up` removes the
+  network and stops. The gateway call is
+  `docker network inspect -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}'`; the isolation
+  probe gets every address in its output as `GW`, separated by spaces, and tries the ports on
+  each (K177). For an isolated network Docker prints `invalid IP`, `GW` is empty and the
+  probe tries no host port. On such a network the first address of the subnet goes to the
+  first container attached (`hc-proxy`), not to the host. When the gateway call itself fails,
+  `up` stops and the probe reports `cannot read the gateway` (K181). When the probe fails, the error of `up` lists the findings in
+  brackets. `00_preflight.sh` requires Docker Engine 28.0.0, the first version with gateway
+  mode `isolated`.
 - **Smoke probes:** `suites/smoke.toml` has one task per probe, id `p-h1-…` to `p-h7-…`.
   P-H1, 2, 3, 5, 7 pin `expect.hermes`; P-H4 and P-H6 are observations with no pinned
   outcome for `hermes-guarded`. `edit-basic`, `shell-basic` and `toolchain-probe` expect
