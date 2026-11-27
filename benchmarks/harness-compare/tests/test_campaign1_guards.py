@@ -165,8 +165,19 @@ def test_k22_stage_cb_in_either_spelling_should_skip_task_selection(tmp_path, st
 
 @pytest.mark.parametrize("stage_args", [["--stage", "a"], ["--stage=a"]])
 def test_k22_stage_a_in_either_spelling_should_select_tasks(tmp_path, stage_args):
-    _, log, _ = prereg_run(tmp_path, stage_args)
-    assert selected(log)
+    # Round 14 (K100): stage a selects with `hcbench.rebench select`, not select_tasks, and
+    # needs --rules (K97).
+    from test_campaign1_prereg_script import prereg_env
+
+    rig = make_rig(tmp_path)
+    bindir, log = make_fake_bin(tmp_path)
+    # The K117 preflight (hcbench.prereg) is stubbed like the other K100 script tests do.
+    stub = "hcbench.rebench,hcbench.prereg"
+    env = {**prereg_env(rig, tmp_path), "FAKE_UV_STUB_MODULES": stub}
+    args = ["t1", "--draft", *stage_args, "--rules", "prereg/c1/preregistration.toml"]
+    run_script(rig, "05_preregister.sh", args, bindir, env)
+    assert any("hcbench.rebench" in " ".join(c) and "select" in c for c in calls(log))
+    assert not selected(log)
 
 
 @pytest.mark.parametrize(
@@ -189,7 +200,9 @@ def make_n(args):
 
 @pytest.mark.parametrize("stage", ["a", "cb"])
 def test_k22_make_prereg_should_accept_the_two_stages(stage):
-    r = make_n(["NAME=x", f"STAGE={stage}"])
+    # Round 14 (K100): stage a also needs RULES=.
+    rules = ["RULES=c1"] if stage == "a" else []
+    r = make_n(["NAME=x", f"STAGE={stage}", *rules])
     assert r.returncode == 0, r.stderr
 
 

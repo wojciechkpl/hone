@@ -22,13 +22,21 @@ def test_bench_env_example_should_define_a_nonempty_hermes_ref():
     assert env.get("HC_HERMES_REF", "").strip() != ""
 
 
+def _seed_env(monkeypatch):
+    """Stage cb needs the suite A rule keys; take the example's values (round 14: stage a now
+    needs --rules and a real selection, so these tests run the stage that needs neither)."""
+    vals = load_env_file(ROOT / "config" / "bench.env.example", base={"HOME": "/h"})
+    for k in [*prereg.REQUIRED_CB, *prereg.NUMERIC_KEYS]:
+        monkeypatch.setenv(k, vals[k])
+    monkeypatch.setenv("HC_SERVER", "mock")
+
+
 def _run(tmp_path, monkeypatch, ref, draft=True):
-    sel = tmp_path / "selection.json"
-    sel.write_text("{}")
+    _seed_env(monkeypatch)
     out = tmp_path / "preregistration.toml"
     monkeypatch.setenv("HC_HERMES_REF", ref)
     monkeypatch.setenv("HC_BUNDLE_DIR", str(tmp_path / "nobundle"))
-    args = ["--selection", str(sel), "--out", str(out)]
+    args = ["--stage", "cb", "--out", str(out)]
     if draft:
         args.append("--draft")
     return prereg.main(args), out
@@ -57,8 +65,7 @@ def _prereg(tmp_path, monkeypatch, manifest, ref="v2026.9.24", sha=SHA, arms="pi
     bundle.mkdir(exist_ok=True)
     if manifest is not None:
         (bundle / "manifest.json").write_text(json.dumps(manifest))
-    sel = tmp_path / "selection.json"
-    sel.write_text("{}")
+    _seed_env(monkeypatch)
     envf = tmp_path / "empty.env"
     envf.write_text("")
     out = tmp_path / "pre.toml"
@@ -70,9 +77,7 @@ def _prereg(tmp_path, monkeypatch, manifest, ref="v2026.9.24", sha=SHA, arms="pi
         monkeypatch.delenv("HC_HERMES_SHA", raising=False)
     else:
         monkeypatch.setenv("HC_HERMES_SHA", sha)
-    rc = prereg.main(
-        ["--selection", str(sel), "--out", str(out), "--env-file", str(envf), "--draft"]
-    )
+    rc = prereg.main(["--stage", "cb", "--out", str(out), "--env-file", str(envf), "--draft"])
     return rc, out
 
 

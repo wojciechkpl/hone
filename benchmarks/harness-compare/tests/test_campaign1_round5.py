@@ -383,12 +383,18 @@ def test_k50_draft_flag_records_draft_true_even_without_placeholders(env):
 def test_k50_draft_flag_records_draft_true_for_stage_a_too(env):
     import tomllib
 
+    from test_campaign1_prereg import run_cb
+    from test_campaign1_round14 import write_selection
+
     pin(env)
-    sel = env["tmp"] / "selection.json"
-    sel.write_text("{}")
+    # Round 14 (K97): stage a needs the stage-cb file (--rules) and a real selection.
+    _, cb = run_cb(env)
+    rules = tomllib.loads(cb.read_text())["suite_a_rules"]
+    write_selection(env["tmp"] / "sel", rules)
     out = env["tmp"] / "pa.toml"
     rc = prereg_mod.main(
-        ["--stage", "a", "--selection", str(sel), "--out", str(out),
+        ["--stage", "a", "--selection", str(env["tmp"] / "sel" / "selection.json"),
+         "--rules", str(cb), "--out", str(out),
          "--env-file", str(ROOT / "config" / "bench.env.example"), "--draft"]
     )  # fmt: skip
     assert rc == 0

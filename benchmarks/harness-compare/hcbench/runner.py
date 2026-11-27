@@ -396,7 +396,12 @@ def execute_run(
         try:
             records = admin("GET", f"{cfg.proxy_admin}/admin/runs/{proxy_key}/records") or []
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            key = "instrumentation_error" if started else "infra_error"
+            # K151: a lost request log is an infrastructure error, beside any earlier
+            # instrumentation_error, so the run is re-run and never graded.
+            # K162: a suite C run (red team) keeps its evidence, so it stays fail-closed.
+            key = (
+                "instrumentation_error" if started and task.scenario is not None else "infra_error"
+            )
             result[key] = result[key] or f"records: {e}"
         with (rdir / "proxy.jsonl").open("w") as fh:
             for rec in records:

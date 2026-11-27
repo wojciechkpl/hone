@@ -218,26 +218,17 @@ def test_k11_analysis_should_cover_h3_h4_and_the_holm_family_for_c(env):
 # ---- K12 placeholders -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("stage", ["cb", "a"])
-def test_k12_placeholder_should_be_refused_without_draft(env, stage):
-    sel = env["tmp"] / "selection.json"
-    sel.write_text("{}")
-    args = ["--stage", stage, "--out", str(env["tmp"] / "p.toml"), "--env-file", str(EXAMPLE)]
-    if stage == "a":
-        args += ["--selection", str(sel)]
+def test_k12_placeholder_should_be_refused_without_draft(env):
+    # Stage a moved to round 14 (K97): it needs --rules and a selection; see round14 tests.
+    args = ["--stage", "cb", "--out", str(env["tmp"] / "p.toml"), "--env-file", str(EXAMPLE)]
     with pytest.raises(SystemExit) as exc:
         prereg.main(args)
     assert "HC_MODEL_REVISION" in str(exc.value)
 
 
-@pytest.mark.parametrize("stage", ["cb", "a"])
-def test_k12_draft_should_allow_placeholders_and_say_so(env, stage):
-    sel = env["tmp"] / "selection.json"
-    sel.write_text("{}")
+def test_k12_draft_should_allow_placeholders_and_say_so(env):
     out = env["tmp"] / "p.toml"
-    args = ["--stage", stage, "--out", str(out), "--env-file", str(EXAMPLE), "--draft"]
-    if stage == "a":
-        args += ["--selection", str(sel)]
+    args = ["--stage", "cb", "--out", str(out), "--env-file", str(EXAMPLE), "--draft"]
     assert prereg.main(args) == 0
     assert tomllib.loads(out.read_text())["draft"] is True
 
@@ -267,34 +258,3 @@ def test_k14_stage_cb_file_should_not_say_n_equals_40_anywhere(env):
     pin(env)
     _, out = run_cb(env)
     assert "n=40" not in out.read_text()
-
-
-# ---- K15 stage a unchanged ---------------------------------------------------------------
-
-
-@pytest.fixture
-def stage_a(env):
-    pin(env)
-    sel = env["tmp"] / "selection.json"
-    sel.write_text(json.dumps({"dataset": "d", "split": "s", "n": 3, "seed": 9, "digest": "abc"}))
-    (env["tmp"] / "tasks.txt").write_text("a\nb\nc\n")
-    out = env["tmp"] / "pa.toml"
-    return prereg.main, sel, out
-
-
-@pytest.mark.parametrize("flag", [[], ["--stage", "a"]])
-def test_k15_stage_a_should_write_what_it_wrote_before_plus_stage(env, stage_a, flag):
-    main, sel, out = stage_a
-    assert (
-        main([*flag, "--selection", str(sel), "--out", str(out), "--env-file", str(EXAMPLE)]) == 0
-    )
-    data = tomllib.loads(out.read_text())
-    assert data["stage"] == "a"
-    assert data["tasks"]["dataset"] == "d"
-    assert data["tasks"]["n"] == 3
-    assert data["tasks"]["digest"] == "abc"
-    assert data["files_sha256"]["tasks_txt"] == hashlib.sha256(b"a\nb\nc\n").hexdigest()
-    assert "prompt_swebench" in data["files_sha256"]
-    assert data["analysis"]["primary_metric"].startswith("pass@1 on suite A")
-    for key in ("suites_in_scope", "suite_a_rules", "cut_order"):
-        assert key not in data

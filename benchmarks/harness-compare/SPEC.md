@@ -536,6 +536,191 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.2.
 - **Stage `a` (K15).** Unchanged apart from `stage = "a"`, the K13 title and the extra
   `[config]` keys.
 
+### Stage a: SWE-rebench loader (K93-K104)
+
+Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
+
+- **`hcbench.rebench`, pure functions.** `split_eligible(name, min_split)` (full match of
+  `[0-9]{4}_(0[1-9]|1[0-2])` and `name >= min_split` as text), `created_date(value)` (the first
+  ten characters as an ISO date, else `None`), `eligible_rows(rows_by_split, min_split,
+  min_created)` (rows of eligible splits with a creation date on or after `min_created`;
+  `instance_id` and `repo` as text, a `split` field, sorted by id) and `choose_tasks(rows, n,
+  seed)`, which is `hcbench.sampling.select_suite_a` (next to `allocate` and
+  `stratified_sample`).
+- **Seams.** `resolve_revision(dataset, revision) -> str | None` (the commit SHA, `None` when it
+  can't be resolved), `list_splits(dataset, sha)`, `load_split(dataset, split, sha)` and
+  `run_command(argv)`. Tests replace them; nothing in the tests uses the network or Docker.
+- **`select`** resolves the revision first and stops if it can't (no unpinned load), loads each
+  eligible split at the SHA, and refuses: no eligible task, an `instance_id` in two eligible
+  splits, an eligible row with no image, or `image_name` and `docker_image` that differ. It
+  writes `tasks.txt`, `instances.jsonl`, `dataset.json` and `selection.json` (`dataset`,
+  `revision`, `resolved_revision`, `splits`, `min_split`, `min_created`, `n`, `seed`, `method`,
+  `eligible_count`, `eligible_repos`, `eligible_digest`, `digest`, `python_version`,
+  `python_implementation`, `grader`, `created_at`).
+- **`check-images --dir DIR`** runs each pinned image in `images.digests` once with `docker run
+  --rm --network none --entrypoint bash <ref> -c <script>` (`REBENCH_PATH` in `hcbench.suites`).
+  A task passes when HEAD is its `base_commit`, `git status --porcelain` is empty and Python
+  runs. It writes `images.check.json`, rewrites `tasks.txt` without the failures, and adds
+  `excluded` (id to reason) and `run_digest` to `selection.json`; `digest` keeps the drawn
+  list.
+- **Stage `a` file (K97, K98).** `--rules` (the stage-`cb` file) is required; `--accept-diff KEY`
+  repeats. Besides the usual tables it has `[rules_check]` (`path`, `sha256`, `repo_head`,
+  `accepted`), `[tasks]` (the `selection.json` keys except `created_at` and `excluded`, plus
+  `run_digest`), `[task_created_at]`, `[task_images]`, `[excluded_tasks]`, `[grader]` (`repo`,
+  `commit` from `HC_A_GRADER_REF`, `namespace` from `HC_A_NAMESPACE`) and `[analysis]` from
+  `ANALYSIS_PLAN_A`. `files_sha256` adds `prompt_swebench`, `tasks_txt`, `instances_jsonl`,
+  `dataset_json`, `selection_json`, `images_digests` and `images_check_json`. Stage `cb` is
+  unchanged.
+- **Round 14b (K114-K122).**
+  - *Cut (K114).* `n = 40` replaces the recorded `n = 60` only when the stage-`cb` `cut_order`
+    has exactly `"suite A tasks 60 -> 40"`. The stage-`a` file then records
+    `[rules_check] cut`. Any other `n` is refused, and `--accept-diff` can't let it through. The
+    selection's `n` must equal `HC_A_N`.
+  - *Docker errors (K115, K119).* In `check-images`, a `docker run` exit of 125 stops the check
+    with a message naming the task and writes nothing; exits 126, 127 and failures inside the
+    container still exclude the task, with the exit code in the reason. A re-run merges its
+    results into `images.check.json`, so earlier results are kept.
+  - *Finished check (K116).* A non-draft stage `a` refuses unless `images.check.json` exists,
+    `run_digest` is in `selection.json` and equals `manifest_digest` of `tasks.txt`, no task of
+    `tasks.txt` is in `excluded`, and `tasks.txt` together with `excluded` has the digest `digest`.
+  - *Preflight (K117).* `python -m hcbench.prereg --stage a --rules <file> --preflight
+    [--accept-diff KEY]...` runs the checks that need no selection (rules file, `HC_A_*` and
+    `HC_SELECTION_SEED` against `[suite_a_rules]`, `[config]`, bundle, K120 files) and writes
+    nothing. `scripts/05_preregister.sh` runs it before it creates the directory, selects or
+    pulls.
+  - *Stage `cb` (K118).* Its output is unchanged byte for byte: `[bundle]` comes after
+    `[files_sha256]`.
+  - *Files (K120).* Every `files_sha256` key both files record (`arms.toml` and the Dockerfiles
+    among them) must have the same hash, unless `--accept-diff files_sha256.<key>` names it; it
+    is then recorded under `[rules_check] accepted` with both hashes.
+  - *Selection environment (K121).* `resolve_revision` returns `None` on any exception.
+    `selection.json` adds `datasets_version` and `huggingface_hub_version`
+    (`importlib.metadata.version`, empty when not installed), and `splits` lists every eligible
+    split name at the revision.
+  - *Small fixes (K122).* A stage-`cb` `[config]` key missing from the environment compares and
+    records as `""`; `dataset.json` rows carry no `split` field.
+
+- **Round 15 (K105-K109, K124-K128).**
+  - *Environment and images (K105, K106).* `hcbench.matrix --suite a` needs `--image-digests`
+    (the prereg `images.digests`). Each task runs the pinned `<name>@sha256:` reference of its
+    image, via `suites.parse_digests` (a line that isn't exactly `<image> <ref>` pins nothing);
+    a task with no pinned image stops the run before any container starts. A task whose
+    published image starts with `swerebench/` gets `suites.REBENCH_PATH`, any other `SWE_PATH`.
+  - *Arms and repeats (K107).* `scripts/10_run.sh a` uses `HC_ARMS_MAIN` and `HC_A_REPEATS`,
+    passes `--image-digests`, and stops when `images.digests` is missing.
+  - *Grading (K108, K109).* `scripts/20_grade.sh` installs the SWE-rebench fork at
+    `HC_A_GRADER_REF` (40 lowercase hex, else refused) when `selection.json` names it as
+    `grader`, and passes `--namespace`, `--cache-level instance`, `--image-digests`,
+    `--grader-repo` and `--grader-commit` to `hcbench.grade`; otherwise it keeps
+    `swebench==5.0.2`. In fork mode `hcbench.grade` writes `grading/dataset.pinned.json` (rows
+    with `image_name` and `docker_image` set to the pinned reference; a row with none is refused)
+    and `grading/grader.json` (`repo`, `commit`, `namespace`, `dataset_sha256`), and runs
+    `run_evaluation` with `--dataset_name <pinned file> --namespace --cache_level`; it refuses an
+    empty namespace. The status mapping is unchanged: an id only in `incomplete_ids`, or in no
+    list, is `missing` and is re-graded.
+  - *Review follow-ups (K124-K128).* A malformed or unreadable bundle manifest stops both stages
+    with a message naming the file. `select` removes a left-over `images.digests` and
+    `images.check.json`. The preflight also runs the K99 checks, the placeholder refusal and the
+    Hermes and Pi bundle checks, with the final step's draft rules. The script refuses an empty
+    `--accept-diff` value, and the preflight and the final check compare the same stripped
+    values.
+
+- **Round 15b to 15d (K129-K140).**
+  - *Classification (K129, K134).* In fork mode `hcbench.grade` classifies only `error_ids`
+    instances; `unresolved_ids` stays `unresolved`. It matches only the error block of
+    `run_instance.log` under `logs/run_evaluation/<run_id>/<model>/<instance>/`: the text after
+    the last line starting with `Error in evaluating model for <instance id>:`, to the end of the
+    file. The Git diff sections and `test_output.txt` are never read, and with no such line the
+    instance stays `error`. The signatures are swebench 5.0.2's `INFRA_FAILURE_SIGNATURES` (MIT,
+    credited in a comment), same order and tiers, with three fork-only environment signatures
+    first (`image_unavailable`, `container_create_failed`, `docker_api_timeout`) and
+    `Test timed out after N seconds` added to `tests_timed_out`. `>>>>> Patch Apply Failed` keeps
+    precedence. An environment-tier match is `grader_infra`, an ambiguous-tier match is
+    `ambiguous`. The Lite path is unchanged.
+  - *Ending every run (K130, K135).* `grader_infra` and `ambiguous` are re-graded.
+    `ambiguous_repeated` (resolved = 0) is at least two attempts after the last `grader_infra`,
+    all `ambiguous`. After three `grader_infra` attempts in a row an instance is
+    `grader_infra_final`: never re-graded, `resolved` blank, listed. `ANALYSIS_PLAN_A`'s
+    exclusions text states both rules.
+  - *Pre-registered fork (K131, K136).* In fork mode `scripts/20_grade.sh` needs
+    `prereg/<name>/preregistration.toml` with `stage = "a"` and takes the commit and namespace
+    from its `[grader]` table; a differing, set `HC_A_GRADER_REF` or `HC_A_NAMESPACE` stops it,
+    naming both values. There is no fallback to the environment.
+  - *Versions (K132).* `grading/grader.json` also has `swebench_version` and `docker_version`
+    (`grade.package_version`, `importlib.metadata`).
+  - *Log prefix (K138).* The fork logs `%(asctime)s - %(levelname)s - %(message)s`, so the error
+    block starts after the last line beginning
+    `\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} - ERROR - Error in evaluating model for <iid>:`
+    (`<iid>` escaped). A diff line or `git apply` output can't take that form.
+  - *Contrasts (K139).* `ANALYSIS_PLAN_A`'s exclusions text adds that a task with no judged run
+    for an arm is left out of every paired contrast with that arm, and the report gives the count
+    per contrast.
+  - *Hard to miss (K140).* `hcbench.grade` prints each `grader_infra_final` run to stderr as a
+    `WARN` line on every run. In fork mode `scripts/20_grade.sh` refuses a missing, unreadable or
+    non-stage-`a` `preregistration.toml` with its own message.
+  - *Gaps (K133).* The preflight and the final check compare the `HC_A_*` rule values unstripped.
+
+- **Round 16 to 16e (K110-K113, K141-K165).**
+  - *When (K148).* The stage-`a` report applies only when the pre-registration has `stage = "a"`
+    and a `[rules_check]` table. An older SWE-bench Lite stage-`a` file gets the plain report
+    ("Suite A", "### Pairwise", no stage-`a` conformance checks).
+  - *Report (K110-K112, K141).* `hcbench.report` heads suite A "Suite A — SWE-rebench
+    (SWE-rebench grading fork), possibly contaminated", with the creation dates from
+    `[task_created_at]`. "H1 (pre-registered)" and "H2 (pre-registered)" hold exactly the K101
+    contrasts. The family is `hone-inject − pi` and `hone-inject − hermes`, with Holm over these
+    (H1) or over their four tests (H2). Then come `hone-inject − hone-noinject` and
+    `pi − hermes`, marked "outside the family", with no Holm decision (K144). No other pair
+    appears. H1 columns: `p (paired bootstrap)`, `Holm`, `tasks used`, `tasks left out`
+    (no `tasks`); H2 columns: `p` and `p (Holm-adjusted)` (the step-down adjusted p), `claimed`,
+    `tasks used`, `tasks left out` (K146); both end with a `family` column ("Holm family" or
+    "outside the family"). A task with no judged run for an arm is left out of
+    its contrasts. The suite A table adds `tokens per resolved run` ("all judged runs' tokens ÷
+    resolved runs"). Claim lines say "no detectable difference at n=<tasks run>".
+  - *Broken runs (K145).* A suite A run with an `instrumentation_error` gets status
+    `instrumentation_error`, resolved 0, in `grading/outcomes.csv` (`grade.collect_instrumented`)
+    and is not graded. It counts as unresolved in H1, keeps its tokens and wall seconds in H2,
+    is listed per arm, and is not a conformance mismatch. `ANALYSIS_PLAN_A` states the rule.
+    `hcbench.grade` writes these rows even when no run can be graded, and on the SWE-bench Lite
+    path too, so an older campaign's plain report counts such runs as unresolved after a
+    re-grade. A row fits only its kind of run (K150): an `instrumentation_error` row fits a run
+    with that error and no `infra_error`, any other row a run without one; otherwise the run is
+    `stale`.
+  - *Lost request log (K151).* When the proxy's records can't be read after a run, the run gets
+    `infra_error` ("records: ..."), beside any `instrumentation_error`, for every suite with no red-team
+    scenario. It is re-run by `--retry-errors` and never graded. A suite C run whose records are
+    lost after the harness started stays an `instrumentation_error` (K162): the outcome is
+    unknown and the evidence is kept.
+  - *Only the pre-registered runs (K158, K159, K160, K161, K163).* Under a stage-`a`
+    pre-registration the suite A table, H1, H2, the claim line's n and the K153 counts use only
+    the expected runs (K152), reading each run's repeat through `_repeat_of`. Any other suite A
+    run stays a mismatch and is counted in a line under the suite A table ("N runs outside the
+    pre-registration are left out."). The caveat "Suite A has N tasks; the pre-registered size
+    is 40." is not written (K163); the plain report and an older stage-`a` file keep it. A file
+    that expects nothing gives "not final: no expected runs recorded". The list of unjudged,
+    repeated-ambiguous and broken runs names expected runs only, since it says how each run was
+    counted.
+  - *No grade for a run with an infrastructure error (K160).* This holds for every suite A
+    report, the plain one too. A run with an `infra_error` never takes a grade from
+    `outcomes.csv`: it is `stale` with a row and `ungraded` without.
+  - *Preflight wording (K165).* The disk check's failure message says "suite A task images",
+    not "40 SWE-bench images". The 200 GB floor is unchanged.
+  - *Not final (K147, K153).* A stage-`a` report is not final while an expected run is missing,
+    has an `infra_error`, or is pending grading. The H1 and H2 headings say "not final: N runs
+    missing, N runs pending re-run, N runs pending grading" (non-zero parts only), no claim
+    lines are written, and the family rows' `Holm` and `claimed` cells read "not final".
+    `grader_infra_final` runs don't make the report not final; they and `ambiguous_repeated`
+    runs are listed.
+  - *Conformance (K113, K142).* Stage-`a` mismatches are dicts `{run_id, field, expected,
+    found}`: `task_digest` (the campaign's suite A tasks against `run_digest`, else `digest`; the
+    header's digest line uses the same), `image`, `repeats.<arm>` and `grade_status` (`ungraded`,
+    `stale`, `grader_infra`, `ambiguous`, `missing`; not on a run with an `infra_error`). K152 adds
+    `run` (an expected run, from `HC_ARMS_MAIN`, `[task_images]` and `HC_A_REPEATS`, with no
+    `run.json` or with an `infra_error`), `arm` (a suite A arm not in `HC_ARMS_MAIN`) and
+    `expected_runs` (a file that records no arms, repeats or task images).
+  - *Apply failure (K143).* In fork mode `apply_failed` needs a `run_instance.log` line that
+    begins with the K138 prefix followed by ` - INFO - >>>>> Patch Apply Failed`. The Lite path
+    is unchanged.
+
 ### Campaign 1, round 2 (K18-K29)
 
 Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.

@@ -11,9 +11,10 @@ hc-llm (vLLM) ◀── hc-proxy (metering, forced sampling, caps, records) ◀�
 ```
 
 - **Suites**
-  - **A**: SWE-bench Lite, 40 tasks (pre-registered, stratified by repo, official grader).
-    It is retired as the headline suite: stage 2 of campaign 1 replaces it with SWE-rebench
-    once the loader lands (design §10.3, §11 and §11.15)
+  - **A**: SWE-rebench, 60 tasks from split `2026_03` and later, one per repository
+    (pre-registered rules, the SWE-rebench grading fork, reported as possibly contaminated).
+    It runs as stage 2 of campaign 1 (design §10.3, §11.15 and §11.17). The older SWE-bench
+    Lite path (40 tasks, official grader) is retired as the headline suite; its code stays.
   - **B**: the 10-task mini-bench (graded by check commands; never part of the headline)
   - **C**: red team, 20 risky calls + 5 planted injections, judged by tripwires
 - **Arms** (`config/arms.toml`): `pi`, `hone-noinject`, `hone-inject`, `hermes`, plus
@@ -165,6 +166,126 @@ Before the tag, `git status --ignored --short .` should list only build outputs,
 and tool folders (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`,
 `.pytest_cache/`, `.ruff_cache/`, `.claude/`, `uv.lock`), editor swap or backup files,
 `.DS_Store`, and `config/bench.env`: the code check can't see ignored files.
+
+## Campaign 1, stage 2 (suite A on SWE-rebench)
+
+Stage 2 pre-registers the suite A task list under its own name, `c1-a`, from the merged
+code. It needs the stage-`cb` file (`prereg/c1/`) tagged first. Design:
+[`harness-compare-v2`](../../docs/plans/harness-compare-v2-2026-11.md) §11.17.
+
+```bash
+make prereg NAME=c1-a STAGE=a RULES=c1   # RULES= is the stage-cb name under prereg/
+git add prereg/c1-a
+git commit -m "bench: pre-register campaign 1, stage a"
+git tag bench-prereg-c1-a
+git push origin HEAD bench-prereg-c1-a
+
+make run-a CAMPAIGN=c1-a                 # HC_ARMS_MAIN at HC_A_REPEATS, on the pinned images
+scripts/20_grade.sh c1-a                 # the SWE-rebench fork; add --regrade for re-grades
+```
+
+`make prereg` doesn't pass `--accept-diff`. When a difference from the stage-`cb` file has to
+go through, call the script directly:
+
+```bash
+scripts/05_preregister.sh c1-a --stage a --rules prereg/c1/preregistration.toml --accept-diff KEY
+```
+
+`scripts/05_preregister.sh` first runs `hcbench.prereg --preflight`. It checks the rules, the
+config, the bundle and the file hashes against the stage-`cb` file, and the checks that need
+only the environment, before it creates a directory, selects or pulls anything. Then it runs,
+in order:
+1. `python -m hcbench.rebench select`: eligible splits and dates, then `select_suite_a`. The
+   dataset revision from `HC_A_REVISION` (empty: the hub's main) is resolved to a commit. A new
+   selection removes any `images.digests` and `images.check.json` left in its directory.
+2. The image pulls and their digests (`images.digests`).
+3. `python -m hcbench.rebench check-images`: each pinned image runs once with no network. A task
+   whose HEAD is not the base commit, whose `git status` is not empty or whose Python doesn't
+   run is excluded and listed. A Docker error, exit 125, stops the check, and the whole check
+   is run again.
+4. `hcbench.prereg --stage a`.
+
+`HC_SKIP_PULL=1` is accepted only with `--draft`. The images are large: 1.2 to 4.3 GB each
+compressed, about 35 GB to download for 60 because they share a base, and about 75 to 110 GB
+on disk depending on Docker's image store (measured 2026-11-22; design §11.17).
+
+`hcbench.prereg --stage a --rules <stage-cb file>` refuses when:
+- the file is missing, not stage `cb`, or a draft;
+- the selection's dataset, `min_split`, `min_created`, `n`, seed or grader differ from the
+  stage-`cb` `[suite_a_rules]` (nothing overrides this);
+- a `[config]` key, the bundle or a shared `files_sha256` hash (`arms.toml` and the Dockerfiles
+  among them) differs from the stage-`cb` file;
+- the image check is unfinished: `images.check.json` is missing, `run_digest` is missing or
+  differs from `tasks.txt`, an excluded task is still in `tasks.txt`, or `tasks.txt` with the
+  excluded tasks doesn't match the drawn list;
+- an `HC_A_GRADER_REF` isn't 40 lowercase hex characters, `HC_A_NAMESPACE` is empty, or an
+  `images.digests` line says `MISSING` or isn't `<image> <name>@sha256:<64 hex>` (non-draft).
+
+`--accept-diff KEY` lets a named difference through (`bundle` for the bundle,
+`files_sha256.<key>` for a hash). It is then listed under `[rules_check] accepted` with both
+values, and it must also be logged in `prereg/c1/DEVIATIONS.md`. `n = 40` is accepted without
+it when the stage-`cb` `cut_order` has exactly "suite A tasks 60 -> 40"; the file then records
+`[rules_check] cut`.
+
+**Runs.** `make run-a CAMPAIGN=c1-a` reads `prereg/c1-a/` (`HC_PREREG` overrides the name).
+It stops if `images.digests` is missing. Each task runs its pinned `<name>@sha256:` image, and
+a task with no pinned image stops the run before any container starts. A task whose image
+starts with `swerebench/` runs with the `testbed` env first on its `PATH`.
+
+**Grading.** When `prereg/c1-a/selection.json` names `SWE-rebench/SWE-bench-fork` as grader,
+`scripts/20_grade.sh` needs the stage-`a` file `prereg/c1-a/preregistration.toml` and stops if
+it is missing or its `stage` isn't `a`. It takes the fork commit and namespace from that file's
+`[grader]` table; if `HC_A_GRADER_REF` or `HC_A_NAMESPACE` is set and differs, it stops and
+names both values. It installs the fork at that commit and grades on the pinned images with
+`--cache_level instance`. `hcbench.grade` writes `grading/dataset.pinned.json` (the chosen rows
+with `image_name` and `docker_image` set to the pinned reference) and `grading/grader.json`
+(the fork's repository, commit, namespace, the installed `swebench` and `docker` versions, and
+the dataset file's sha256). Any other grader keeps `swebench==5.0.2`.
+
+The fork can't tell a broken grading environment from a failed patch. For each instance in
+`error_ids` (never `unresolved_ids`), `hcbench.grade` reads the harness's own error block: the
+text after the last `Error in evaluating model for <instance>:` line of `run_instance.log`.
+The patch sections and `test_output.txt` are never read, because the agent controls them. The
+block is matched against swebench 5.0.2's signatures plus those the fork writes (a failed image
+pull or build, a container that can't be created, a Docker API timeout, its test timeout). An
+apply failure stays an apply failure, and an error with no block stays `error`.
+- `grader_infra` (the environment broke) and `ambiguous` (a missing module, no tests collected,
+  a test timeout) have a blank `resolved` in `outcomes.csv`. Run `scripts/20_grade.sh c1-a
+  --regrade` until none is left.
+- At least two attempts after the last `grader_infra`, all `ambiguous`: final as
+  `ambiguous_repeated`, counted as unresolved.
+- Three `grader_infra` attempts in a row: `grader_infra_final`. It is no longer re-graded, its
+  `resolved` stays blank (left out of pass@1), and the report lists it as unjudged.
+- A run with an `instrumentation_error` (the harness started, then the run failed) is not
+  graded. `hcbench.grade` writes it as `instrumentation_error`, resolved 0, even when nothing
+  else can be graded. It does so on the SWE-bench Lite path too, so an older campaign's plain
+  report counts such runs as unresolved after a re-grade. A run whose request log can't be read
+  is an infrastructure error and is re-run with `--retry-errors`, except in suite C, where it
+  stays an `instrumentation_error` (re-running would delete the run's evidence). A run with an
+  infrastructure error keeps no grade until it is re-run.
+
+Suite A results are reported as possibly contaminated (see **Suite A rules** above).
+**Report.** `make report CAMPAIGN=c1-a` (with `HC_PREREG` pointing at `prereg/c1-a`) writes
+the suite A section under the heading "possibly contaminated", with the creation dates of the
+tasks. H1 (pass@1) and H2 (tokens and wall seconds per task) are pre-registered and hold the
+contrasts of the analysis plan: `hone-inject` against `pi` and `hermes` (Holm over these), then
+`hone-inject − hone-noinject` and `pi − hermes`, marked "outside the family". H2 gives the
+Holm-adjusted p. Each contrast shows the tasks used and the tasks left out, because one arm has
+no judged run for them. The `family` column of H1 and H2 says whether a row is in the Holm family
+or outside it.
+
+The report lists the `grader_infra_final` runs as unjudged, the `ambiguous_repeated` runs, and
+the runs with an `instrumentation_error` per arm (they count as unresolved and are not graded),
+for the expected runs only.
+It exits with the conformance code if a run the stage-`a` file expects (every arm in
+`HC_ARMS_MAIN`, every task, every repeat) is missing or has an infrastructure error, if a run is
+still waiting for a grade, or if the tasks, images, arms or repeats differ from the file. While
+runs are missing, waiting for a re-run or waiting for grading, the H1 and H2 headings say "not
+final" with the counts, no claim lines are written, and the family rows read "not final". So
+does a stage-`a` file that records no arms, repeats or task images ("no expected runs
+recorded"). The suite A table, H1 and H2 use only the expected runs. A run of an arm, task or
+repeat the file doesn't list is left out, still a mismatch, and a line under the suite A table
+counts it.
 
 ## Day-to-day
 

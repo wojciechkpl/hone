@@ -37,10 +37,11 @@ stack-down:
 	$(S)/03_stack.sh down
 smoke: ## P1.5 capability probes
 	$(S)/04_smoke.sh
-prereg: ## P1.6 pre-register (NAME=..., STAGE=cb for campaign 1)
+prereg: ## P1.6 pre-register (NAME=..., STAGE=cb for campaign 1; STAGE=a needs RULES=<name of the cb dir>)
 	@test -n "$(NAME)" || (echo "NAME=... required" && exit 2)
 	@$(if $(filter-out a cb,$(STAGE)),$(error STAGE must be a or cb, got '$(STAGE)'))true
-	$(S)/05_preregister.sh $(NAME)$(if $(STAGE), --stage $(STAGE))
+	@$(if $(and $(filter a,$(STAGE)),$(if $(RULES),,x)),$(error STAGE=a needs RULES=<name>, the stage cb pre-registration under prereg/))true
+	$(S)/05_preregister.sh $(NAME)$(if $(STAGE), --stage $(STAGE))$(if $(RULES), --rules prereg/$(RULES)/preregistration.toml)
 run-a: ## P1.8 suite A (CAMPAIGN=...)
 	@test -n "$(CAMPAIGN)" || (echo "CAMPAIGN=... required" && exit 2)
 	$(S)/10_run.sh a $(CAMPAIGN)
