@@ -58,6 +58,8 @@ ollama pull qwen2.5-coder:14b         # then add --model ollama:qwen2.5-coder:14
 
 `hone configure` walks through the same choice and saves it to `~/.config/hone/config.toml`. For the local model, type `qwen2.5-coder:14b` as a custom model name.
 
+Is the GPU in another computer? Keep the model there and reach it through an SSH tunnel: see [Local model on another machine](#local-model-on-another-machine).
+
 **3. Run a task, then read the receipts.**
 
 > [!WARNING]
@@ -995,6 +997,38 @@ hone --model ollama:qwen2.5-coder:14b "hello"
 ```
 
 `hone configure` saves your choice to `~/.config/hone/config.toml`. If you haven't chosen a model and no API key is set, Hone looks for an installed Claude Code (`claude`) or Gemini CLI (`gemini`) before it looks for Ollama. Those two run their own tools (Claude Code auto-accepts file edits), which Hone can't check, sandbox or record, and Hone refuses them if you have permission rules. For Hone's own tools, rules and receipts without a key, choose an Ollama model with `--model` or `hone configure`.
+
+### Local Model on Another Machine
+
+Run Hone on your laptop while the model runs on a machine with a GPU. Ollama stays private on that machine, and Hone reaches it through an SSH tunnel.
+
+```bash
+# On the GPU machine: pull a model that supports tools, and see where Ollama listens
+ollama pull qwen2.5-coder:14b
+ss -ltn | grep 11434                           # usually 127.0.0.1:11434
+
+# On the laptop: open the tunnel and leave it running
+ssh -N -L 11435:127.0.0.1:11434 you@gpu-box
+```
+
+```toml
+# ~/.config/hone/config.toml on the laptop
+default_model = "ollama:qwen2.5-coder:14b"
+
+[providers.ollama]
+base_url = "http://127.0.0.1:11435"
+```
+
+```bash
+# The number is the context length the server uses: the CONTEXT column of `ollama ps`
+HONE_CONTEXT_WINDOW=32768 hone "Read README.md and summarise it in one sentence"
+```
+
+- **Tunnel target.** If `ss` shows another address than `127.0.0.1:11434`, put that address in the `ssh -L` command.
+- **Context length.** Hone doesn't tell Ollama how much context to use, and its own prompt already takes about 4,000 tokens. The server needs 32k or more.
+- **Edit the file by hand.** `hone configure` replaces the whole `config.toml`.
+
+The [tutorial](docs/tutorials/local-model-remote-gpu.md) has every step, the context settings, troubleshooting and security notes.
 
 ## Usage
 
