@@ -69,7 +69,8 @@ also cut the prompt short without saying so).
   is too small. Use 32k or more.
 - **In a project with saved memories Hone sends much more,** because it adds recalled
   memories. One project sent 29,358 input tokens for a one-line prompt with a 32,768
-  window. A larger context leaves more room for the work itself.
+  window. A larger context leaves more room for the work itself, and so does
+  [recalling less](#keep-recalled-memories-small).
 
 Load the model once and read the `CONTEXT` column:
 
@@ -188,6 +189,34 @@ hone: no price for ollama:qwen2.5-coder:14b; its usage isn't counted towards cos
 
 To use another installed model for one run, pass `--model ollama:<name>`.
 
+## Keep recalled memories small
+
+Hone adds up to five saved memories to every prompt (`[memory] top_k`), and there is no
+token limit on them. Long ones, such as saved question-and-answer conversations, can fill
+a small context by themselves. In one setup five conversation memories made a one-line
+prompt 32,497 input tokens; without them it was 6,905.
+
+See what a prompt costs and what it is made of:
+
+```bash
+hone --json "Reply with exactly one word: ready"   # usage.input, and tokens per block under "context"
+hone memory ls                                      # what is in the memory store
+```
+
+A large `recall` block means memories are the cause. Limit them in
+`~/.config/hone/config.toml`:
+
+```toml
+[memory]
+exclude_kinds = ["outcome", "conversation"]   # never recall saved conversations
+# top_k = 2                                     # or recall fewer memories (default 5)
+# recaller = "none"                             # or recall nothing
+```
+
+This deletes nothing, and it applies to every model. `hone strategies` shows the values in
+effect. The keys are described in
+[Context and memory strategies](../configuration.md#context-and-memory-strategies).
+
 ## Troubleshooting
 
 | Symptom | What to check |
@@ -196,7 +225,7 @@ To use another installed model for one run, pass `--model ollama:<name>`.
 | `ssh` says "Address already in use" or exits at once | Another program on the laptop holds port 11435: `lsof -nP -iTCP:11435 -sTCP:LISTEN`. Close it or pick another port in both `LocalForward` and `base_url` |
 | `ollama list` on the GPU machine says "could not connect to ollama server" | The service listens on a non-default address. Prefix the command with `OLLAMA_HOST=<address>:11434` |
 | `ollama error (404): model '...' not found` | The name after `ollama:` must match `ollama list` exactly, tag included |
-| `ollama error (400): the prompt is longer than the context length currently available to the model` | Hone assumed a larger context than the server uses. Set `HONE_CONTEXT_WINDOW` to the `CONTEXT` value of `ollama ps`, in the shell you run `hone` from (step 5). If the error stays, raise `OLLAMA_CONTEXT_LENGTH` (step 3) |
+| `ollama error (400): the prompt is longer than the context length currently available to the model` | Hone assumed a larger context than the server uses. Set `HONE_CONTEXT_WINDOW` to the `CONTEXT` value of `ollama ps`, in the shell you run `hone` from (step 5). If the prompt is large because of recalled memories, [recall less](#keep-recalled-memories-small). If the error stays, raise `OLLAMA_CONTEXT_LENGTH` (step 3) |
 | Answers are very slow | `ollama ps` shows `CPU` under `PROCESSOR`: the model doesn't fit the GPU. Use a smaller model or context, and check `nvidia-smi` for other programs using the GPU |
 | `ollama error (0): error sending request for url (http://127.0.0.1:11435/api/chat)` | The tunnel is closed, for example after the laptop slept. Run `ssh -N gpu-llm` again |
 
