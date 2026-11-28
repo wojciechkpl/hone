@@ -72,6 +72,7 @@ Hone detects a provider at startup. Set **one** of these and you're done:
 | OpenAI | `export OPENAI_API_KEY=sk-...` | yes | paid API |
 | DeepSeek, OpenRouter, Qwen, vLLM, ... | `OPENAI_API_KEY` + `HONE_OPENAI_BASE_URL` + `HONE_OPENAI_MODEL` | yes | varies |
 | Ollama (local) | `ollama serve` and `ollama pull llama3.2` | yes | free, on your machine |
+| Ollama on another machine | an SSH tunnel plus `[providers.ollama].base_url`: see [Local model on another machine](tutorials/local-model-remote-gpu.md) | yes | free, on your GPU machine |
 | Claude CLI | have `claude` on `PATH` | Claude's own tools, not Hone's | your Claude plan |
 | Gemini CLI | have `gemini` on `PATH` | Gemini's own tools, not Hone's | your Gemini plan |
 
