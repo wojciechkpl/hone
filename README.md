@@ -1025,7 +1025,7 @@ HONE_CONTEXT_WINDOW=32768 hone "Read README.md and summarise it in one sentence"
 ```
 
 - **Tunnel target.** If `ss` shows another address than `127.0.0.1:11434`, put that address in the `ssh -L` command.
-- **Context length.** Hone doesn't tell Ollama how much context to use, and its own prompt already takes about 4,000 tokens. The server needs 32k or more.
+- **Context length.** Hone doesn't tell Ollama how much context to use, and its own prompt already takes about 4,000 tokens. The server needs 32k or more. Without `HONE_CONTEXT_WINDOW`, Hone can send more than the server accepts, and Ollama answers with error 400 ("the prompt is longer than the context length").
 - **Edit the file by hand.** `hone configure` replaces the whole `config.toml`.
 
 The [tutorial](docs/tutorials/local-model-remote-gpu.md) has every step, the context settings, troubleshooting and security notes.

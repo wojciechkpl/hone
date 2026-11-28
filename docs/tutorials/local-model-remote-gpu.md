@@ -57,8 +57,9 @@ OLLAMA_HOST=172.17.0.1:11434 ollama list
 
 ## 3. On the GPU machine: check the context length
 
-Hone doesn't tell Ollama how much context to use. The server decides, and it drops what
-doesn't fit without telling Hone.
+Hone doesn't tell Ollama how much context to use. The server decides, and it rejects a
+prompt that is longer than its context (Ollama 0.40 answers with error 400; a server may
+also cut the prompt short without saying so).
 
 - **Default:** Ollama picks it from the GPU's memory: 4k tokens below 24 GiB, 32k from 24 to
   48 GiB, and 256k above that
@@ -66,6 +67,9 @@ doesn't fit without telling Hone.
 - **What Hone needs:** its system prompt and tool schemas take about 4,000 tokens before
   your prompt (4,045 input tokens for a one-line prompt in an empty folder). A 4k context
   is too small. Use 32k or more.
+- **In a project with saved memories Hone sends much more,** because it adds recalled
+  memories. One project sent 29,358 input tokens for a one-line prompt with a 32,768
+  window. A larger context leaves more room for the work itself.
 
 Load the model once and read the `CONTEXT` column:
 
@@ -158,8 +162,12 @@ export HONE_CONTEXT_WINDOW=32768
 ```
 
 Without it Hone infers the window from the model's name and assumes 128,000 tokens for a
-model it doesn't know. The variable applies to every model in that shell, so if you also
-use cloud models, set it per command instead: `HONE_CONTEXT_WINDOW=32768 hone ...`.
+model it doesn't know. It can then send more than the server accepts, and the request
+fails with error 400. With it, Hone trims what it sends to the window.
+
+Put the line in your shell profile to keep it. A terminal that was already open doesn't
+have it: open a new one. The variable applies to every model in that shell, so if you
+also use cloud models, set it per command instead: `HONE_CONTEXT_WINDOW=32768 hone ...`.
 
 ## 6. Try it
 
@@ -188,7 +196,7 @@ To use another installed model for one run, pass `--model ollama:<name>`.
 | `ssh` says "Address already in use" or exits at once | Another program on the laptop holds port 11435: `lsof -nP -iTCP:11435 -sTCP:LISTEN`. Close it or pick another port in both `LocalForward` and `base_url` |
 | `ollama list` on the GPU machine says "could not connect to ollama server" | The service listens on a non-default address. Prefix the command with `OLLAMA_HOST=<address>:11434` |
 | `ollama error (404): model '...' not found` | The name after `ollama:` must match `ollama list` exactly, tag included |
-| Hone forgets instructions or stops using tools in a long session | The server's context is smaller than Hone assumes. Compare `ollama ps` with `HONE_CONTEXT_WINDOW` (step 3 and step 5) |
+| `ollama error (400): the prompt is longer than the context length currently available to the model` | Hone assumed a larger context than the server uses. Set `HONE_CONTEXT_WINDOW` to the `CONTEXT` value of `ollama ps`, in the shell you run `hone` from (step 5). If the error stays, raise `OLLAMA_CONTEXT_LENGTH` (step 3) |
 | Answers are very slow | `ollama ps` shows `CPU` under `PROCESSOR`: the model doesn't fit the GPU. Use a smaller model or context, and check `nvidia-smi` for other programs using the GPU |
 | `ollama error (0): error sending request for url (http://127.0.0.1:11435/api/chat)` | The tunnel is closed, for example after the laptop slept. Run `ssh -N gpu-llm` again |
 
